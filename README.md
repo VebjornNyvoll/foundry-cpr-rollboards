@@ -63,15 +63,17 @@ mklink /D "%LOCALAPPDATA%\FoundryVTT\Data\modules\foundry-cpr-rollboards" "C:\de
 
 ## CPR Mook generator notes
 
-The Mook generator probes these pack ids (first match wins):
+Pack ids and item names are verified against the [`cyberpunk-red-core` `dev` branch](https://gitlab.com/cyberpunk-red-team/fvtt-cyberpunk-red-core/-/tree/dev/src/packs):
 
-- `cyberpunk-red-core.skills` / `cyberpunk-red-core.core_skills`
-- `cyberpunk-red-core.roles` / `cyberpunk-red-core.core_roles`
-- `cyberpunk-red-core.weapons` / `cyberpunk-red-core.core_weapons`
-- `cyberpunk-red-core.armor` / `cyberpunk-red-core.core_armor`
-- `cyberpunk-red-core.cyberware` / `cyberpunk-red-core.core_cyberware`
+- skills → `cyberpunk-red-core.internal_skills`
+- roles → `cyberpunk-red-core.core_roles`
+- weapons → `cyberpunk-red-core.core_weapons`
+- armor → `cyberpunk-red-core.core_armor`
+- cyberware → `cyberpunk-red-core.core_cyberware`
 
-If your CPR install names them differently, edit `CPR_PACKS` at the top of [`scripts/cpr-mook.mjs`](scripts/cpr-mook.mjs). Skills always create as inline items if the compendium isn't found, so the Actor is always usable.
+Every gear name in [`scripts/cpr-mook.mjs`](scripts/cpr-mook.mjs) is taken verbatim from the source yaml, including quirks like quality-tier suffixes (`Heavy Pistol (Poor)`) and the body/head split for armor (`Light Armorjack (Body)` + `Light Armorjack (Head)`). Skills always fall back to inline items if a compendium hit somehow misses, so the Actor is always usable.
+
+`system.roleInfo.activeRole` stores the role's name verbatim (e.g. `"Solo"`, not `"solo"`) — that matches what the CPR system's `update-role-from-item` hook writes.
 
 ## License
 

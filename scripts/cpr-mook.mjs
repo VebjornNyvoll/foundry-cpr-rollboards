@@ -20,27 +20,45 @@ import { MODULE_ID, I18N_NS } from "./constants.mjs";
 
 export const CPR_SYSTEM_ID = "cyberpunk-red-core";
 
-/** Best-guess pack ids in cyberpunk-red-core. Lookups are guarded. */
+/**
+ * Pack ids in cyberpunk-red-core. Verified against `src/system.json` on the
+ * `dev` branch. Skills live in the `internal_*` group, gear in `core_*`.
+ */
 const CPR_PACKS = {
-  skills:   ["cyberpunk-red-core.skills",   "cyberpunk-red-core.core_skills"],
-  roles:    ["cyberpunk-red-core.roles",    "cyberpunk-red-core.core_roles"],
-  weapons:  ["cyberpunk-red-core.weapons",  "cyberpunk-red-core.core_weapons"],
-  armor:    ["cyberpunk-red-core.armor",    "cyberpunk-red-core.core_armor"],
-  cyberware: ["cyberpunk-red-core.cyberware", "cyberpunk-red-core.core_cyberware"]
+  skills:    `${CPR_SYSTEM_ID}.internal_skills`,
+  roles:     `${CPR_SYSTEM_ID}.core_roles`,
+  weapons:   `${CPR_SYSTEM_ID}.core_weapons`,
+  armor:     `${CPR_SYSTEM_ID}.core_armor`,
+  cyberware: `${CPR_SYSTEM_ID}.core_cyberware`
 };
 
 /**
- * Archetype presets. Each has:
+ * Canonical role names. Stored verbatim in `system.roleInfo.activeRole` and
+ * also used for the compendium lookup (the role item's `name` field matches).
+ * The system's update-role-from-item hook writes `doc.name` directly, so the
+ * value here MUST match the corebook spelling.
+ */
+export const ROLES = [
+  "Exec", "Fixer", "Lawman", "Media", "Medtech",
+  "Netrunner", "Nomad", "Rockerboy", "Solo", "Tech"
+];
+
+/**
+ * Archetype presets. All item names verified against the `cyberpunk-red-core`
+ * compendium yaml source on the `dev` branch (Apr 2026).
+ *
  *   - stats: 10 stat values
- *   - role: CPR role id used for system.roleInfo.activeRole
- *   - skills: [{ name, level, stat }] — created inline if no compendium hit
- *   - weapons / armor / cyberware: [name] — looked up by name in compendiums,
- *     skipped if absent
+ *   - role: canonical role NAME (matches the role item in core_roles)
+ *   - skills: [{ name, level, stat }] — verified against internal_skills;
+ *     created inline if a compendium hit fails
+ *   - weapons / armor / cyberware: [name] — fetched from corresponding pack
+ *     by exact name. Armor is split into Body/Head entries to match how the
+ *     CPR system models head + body locations.
  */
 export const ARCHETYPES = {
   booster: {
     label: "Booster (gang grunt)",
-    role: "solo",
+    role: "Solo",
     stats: { int: 4, ref: 6, dex: 5, tech: 3, cool: 5, will: 5, luck: 4, move: 5, body: 6, emp: 3 },
     skills: [
       { name: "Athletics",     level: 4, stat: "dex" },
@@ -54,13 +72,14 @@ export const ARCHETYPES = {
       { name: "Resist Torture/Drugs", level: 2, stat: "will" },
       { name: "Streetwise",    level: 4, stat: "cool" }
     ],
-    weapons: ["Heavy Pistol", "Medium Melee Weapon"],
-    armor: ["Light Armorjack"],
-    cyberware: []
+    // Cheap gang-tier gear — Poor-quality variants intentionally.
+    weapons: ["Heavy Pistol (Poor)", "Medium Melee (Poor)"],
+    armor: ["Light Armorjack (Body)", "Light Armorjack (Head)"],
+    cyberware: ["Rippers"]
   },
   tech: {
     label: "Tech (gang specialist)",
-    role: "tech",
+    role: "Tech",
     stats: { int: 6, ref: 5, dex: 5, tech: 7, cool: 4, will: 5, luck: 5, move: 5, body: 4, emp: 5 },
     skills: [
       { name: "Athletics",          level: 2, stat: "dex" },
@@ -74,12 +93,12 @@ export const ARCHETYPES = {
       { name: "Streetwise",         level: 3, stat: "cool" }
     ],
     weapons: ["Medium Pistol"],
-    armor: ["Light Armorjack"],
-    cyberware: ["Cyberaudio Suite"]
+    armor: ["Light Armorjack (Body)", "Light Armorjack (Head)"],
+    cyberware: ["Cyberaudio Suite", "Interface Plugs", "Tool Hand"]
   },
   solo: {
     label: "Solo (combat specialist)",
-    role: "solo",
+    role: "Solo",
     stats: { int: 5, ref: 7, dex: 6, tech: 4, cool: 6, will: 6, luck: 5, move: 6, body: 7, emp: 4 },
     skills: [
       { name: "Athletics",     level: 6, stat: "dex" },
@@ -95,13 +114,13 @@ export const ARCHETYPES = {
       { name: "Stealth",       level: 4, stat: "dex" },
       { name: "Tactics",       level: 4, stat: "int" }
     ],
-    weapons: ["Heavy Pistol", "Assault Rifle"],
-    armor: ["Medium Armorjack"],
-    cyberware: ["Cyberaudio Suite"]
+    weapons: ["Assault Rifle", "Very Heavy Pistol"],
+    armor: ["Medium Armorjack (Body)", "Medium Armorjack (Head)"],
+    cyberware: ["Sandevistan", "Kerenzikov", "Cybereye", "Targeting Scope", "Subdermal Armor"]
   },
   generic: {
     label: "Generic NPC",
-    role: "fixer",
+    role: "Fixer",
     stats: { int: 5, ref: 5, dex: 5, tech: 5, cool: 5, will: 5, luck: 5, move: 5, body: 5, emp: 5 },
     skills: [
       { name: "Athletics",      level: 2, stat: "dex" },
@@ -121,20 +140,6 @@ export const ARCHETYPES = {
   }
 };
 
-/** All CPR roles, for the dialog dropdown. Ids are CPR-system convention. */
-export const ROLES = [
-  { id: "rockerboy", label: "Rockerboy" },
-  { id: "solo",      label: "Solo" },
-  { id: "netrunner", label: "Netrunner" },
-  { id: "tech",      label: "Tech" },
-  { id: "medtech",   label: "Medtech" },
-  { id: "media",     label: "Media" },
-  { id: "exec",      label: "Exec" },
-  { id: "lawman",    label: "Lawman" },
-  { id: "fixer",     label: "Fixer" },
-  { id: "nomad",     label: "Nomad" }
-];
-
 /** Detect whether the CPR system is active. */
 export function isCprActive() {
   return game.system?.id === CPR_SYSTEM_ID;
@@ -144,26 +149,24 @@ export function isCprActive() {
 /*  Compendium helpers                                                 */
 /* ------------------------------------------------------------------ */
 
-function findPack(candidates) {
-  for (const id of candidates) {
-    const pack = game.packs.get(id);
-    if (pack) return pack;
-  }
-  return null;
-}
-
-async function findInPackByName(packCandidates, name) {
+async function findInPackByName(packId, name) {
   if (!name) return null;
-  const pack = findPack(packCandidates);
-  if (!pack) return null;
+  const pack = game.packs.get(packId);
+  if (!pack) {
+    console.warn(`${MODULE_ID} | compendium pack "${packId}" not found`);
+    return null;
+  }
   // Lazily build the index — case-insensitive name match.
   await pack.getIndex();
   const entry = pack.index.find((e) => e?.name?.toLowerCase() === name.toLowerCase());
-  if (!entry) return null;
+  if (!entry) {
+    console.warn(`${MODULE_ID} | "${name}" not found in pack "${packId}"`);
+    return null;
+  }
   try {
     return await pack.getDocument(entry._id);
   } catch (err) {
-    console.warn(`${MODULE_ID} | failed to fetch "${name}" from ${pack.collection}`, err);
+    console.warn(`${MODULE_ID} | failed to fetch "${name}" from ${packId}`, err);
     return null;
   }
 }
@@ -198,22 +201,23 @@ export async function createMook(opts) {
   }
 
   const archetype = ARCHETYPES[opts.archetype] ?? ARCHETYPES.generic;
-  const roleId = opts.role ?? archetype.role ?? "fixer";
+  // The CPR system stores the role's NAME (e.g. "Solo") in activeRole — not
+  // a slug. ROLES is canonical-cased to match.
+  const roleName = ROLES.includes(opts.role) ? opts.role : (archetype.role ?? "Fixer");
 
   const items = [];
 
   // Role — prefer the compendium entry so the user sees the proper role item.
-  // Otherwise create a placeholder inline item with the right type+name.
-  const roleLabel = ROLES.find((r) => r.id === roleId)?.label ?? roleId;
-  const roleDoc = await findInPackByName(CPR_PACKS.roles, roleLabel);
+  // Fallback inline if the pack/name miss.
+  const roleDoc = await findInPackByName(CPR_PACKS.roles, roleName);
   if (roleDoc) {
     items.push(roleDoc.toObject());
   } else {
     items.push({
       type: "role",
-      name: roleLabel,
+      name: roleName,
       img: "icons/svg/mystery-man.svg",
-      system: { activeRole: true }
+      system: {}
     });
   }
 
@@ -276,7 +280,7 @@ export async function createMook(opts) {
         notes: opts.notes ?? ""
       },
       roleInfo: {
-        activeRole: roleId,
+        activeRole: roleName,
         activeNetRole: ""
       }
     },
@@ -340,7 +344,7 @@ export async function openMookDialog(seed = {}) {
     .map(([k, v]) => `<option value="${k}"${k === seed.defaultArchetype ? " selected" : ""}>${v.label}</option>`)
     .join("");
   const roleOptions = ROLES
-    .map((r) => `<option value="${r.id}"${r.id === seed.defaultRole ? " selected" : ""}>${r.label}</option>`)
+    .map((r) => `<option value="${r}"${r === seed.defaultRole ? " selected" : ""}>${r}</option>`)
     .join("");
 
   const L = (k) => game.i18n.localize(`${I18N_NS}.${k}`);

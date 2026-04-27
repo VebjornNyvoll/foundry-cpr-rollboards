@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.1 — CPR pack data verified against source
+
+Fixes three lurking bugs in the v0.1.0 Mook generator caused by guessed-not-verified data:
+
+- **Pack ids**: skills are at `cyberpunk-red-core.internal_skills` (different group prefix than the gear packs). The previous `cyberpunk-red-core.skills` / `cyberpunk-red-core.core_skills` candidates would never resolve. Roles, weapons, armor, and cyberware now use their verified single ids.
+- **`activeRole` value shape**: the CPR system stores the role's *name* (e.g. `"Solo"`) in `system.roleInfo.activeRole`, not a lowercase id. v0.1.0 was writing `"solo"` which the role-update hook would never recognise. `ROLES` is now a flat list of canonical names.
+- **Armor split**: armor in CPR is split into Body/Head locations (`Light Armorjack (Body)` + `Light Armorjack (Head)`). v0.1.0 looked up `"Light Armorjack"` which doesn't exist as a single entry. Each archetype now embeds both pieces.
+- **Booster gets Poor-quality gear** (`Heavy Pistol (Poor)`, `Medium Melee (Poor)`) and `Rippers` cyberware — actually appropriate for a gang grunt.
+- **Solo gets Sandevistan / Kerenzikov / Cybereye + Targeting Scope / Subdermal Armor**, all canonical cyberware names.
+- **Tech gets Cyberaudio Suite + Interface Plugs + Tool Hand**.
+
+All gear and skill names verified against the cyberpunk-red-core `dev` branch yaml source.
+
 ## 0.1.0 — CPR Mook generator
 
 - **Make Actor** button on every drawer result row, when the active system is `cyberpunk-red-core`. Opens the Mook dialog seeded with the rolled NPC name and a structured notes summary of the parent rolls.
