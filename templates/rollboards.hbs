@@ -1,0 +1,139 @@
+{{!-- CPR Rollboards — GM-only. Tabs per scene; canvas of recipe tiles; results drawer at bottom. --}}
+<div class="fcr-root">
+  <nav class="fcr-tabs" aria-label="{{localize 'FOUNDRY-CPR-ROLLBOARDS.scenes'}}">
+    {{#if hasScenes}}
+      {{#each scenes}}
+        <button type="button"
+                class="fcr-tab{{#if active}} fcr-tab-active{{/if}}"
+                data-action="selectTab"
+                data-scene-id="{{id}}"
+                title="{{name}}">
+          {{name}}
+        </button>
+      {{/each}}
+    {{else}}
+      <span class="fcr-empty-tabs">
+        {{#if hasAnyScenesInWorld}}
+          {{localize "FOUNDRY-CPR-ROLLBOARDS.noScenesSelected"}}
+        {{else}}
+          {{localize "FOUNDRY-CPR-ROLLBOARDS.noScenes"}}
+        {{/if}}
+      </span>
+    {{/if}}
+  </nav>
+
+  <div class="fcr-toolbar">
+    <label class="fcr-show-names">
+      <input type="checkbox"
+             data-action="toggleNames"
+             {{#if showNames}}checked{{/if}}
+             {{#unless activeSceneId}}disabled{{/unless}} />
+      {{localize "FOUNDRY-CPR-ROLLBOARDS.showNames"}}
+    </label>
+
+    <span class="fcr-toolbar-sep"></span>
+
+    <button type="button" class="fcr-btn" data-action="openSceneSelector"
+            title="{{localize 'FOUNDRY-CPR-ROLLBOARDS.sceneSelectorTooltip'}}">
+      <i class="fas fa-list-check"></i>
+      {{localize "FOUNDRY-CPR-ROLLBOARDS.sceneSelectorButton"}}
+    </button>
+
+    <span class="fcr-toolbar-sep"></span>
+
+    <button type="button" class="fcr-btn" data-action="savePreset"
+            {{#unless canActSave}}disabled{{/unless}}
+            title="{{localize 'FOUNDRY-CPR-ROLLBOARDS.savePresetTooltip'}}">
+      <i class="fas fa-floppy-disk"></i>
+      {{localize "FOUNDRY-CPR-ROLLBOARDS.savePresetButton"}}
+    </button>
+
+    <button type="button" class="fcr-btn" data-action="importPreset"
+            {{#unless canActImport}}disabled{{/unless}}
+            title="{{localize 'FOUNDRY-CPR-ROLLBOARDS.importPresetTooltip'}}">
+      <i class="fas fa-file-import"></i>
+      {{localize "FOUNDRY-CPR-ROLLBOARDS.importPresetButton"}}
+    </button>
+
+    <button type="button" class="fcr-btn" data-action="managePresets"
+            {{#unless canManagePresets}}disabled{{/unless}}
+            title="{{localize 'FOUNDRY-CPR-ROLLBOARDS.managePresetsTooltip'}}">
+      <i class="fas fa-sliders"></i>
+      {{localize "FOUNDRY-CPR-ROLLBOARDS.managePresetsButton"}}
+    </button>
+
+    <span class="fcr-hint">{{localize "FOUNDRY-CPR-ROLLBOARDS.hint"}}</span>
+  </div>
+
+  <div class="fcr-canvas-scroll">
+    <div class="fcr-canvas" data-scene-id="{{activeSceneId}}">
+      {{#each tiles}}
+        <div class="fcr-tile{{#if ../showNames}} fcr-with-name{{/if}}{{#if missing}} fcr-missing{{/if}}"
+             data-recipe-id="{{recipeId}}"
+             style="left: {{x}}px; top: {{y}}px;">
+          {{#if ../showNames}}
+            <div class="fcr-tile-name" title="{{name}}">{{name}}</div>
+          {{/if}}
+          <button type="button"
+                  class="fcr-tile-icon"
+                  data-action="rollTile"
+                  data-recipe-id="{{recipeId}}"
+                  title="{{name}}"
+                  aria-label="{{name}}"
+                  style="background-image: url('{{img}}');">
+          </button>
+          <button type="button"
+                  class="fcr-tile-delete"
+                  data-action="deleteTile"
+                  data-recipe-id="{{recipeId}}"
+                  title="{{localize 'FOUNDRY-CPR-ROLLBOARDS.remove'}}"
+                  aria-label="{{localize 'FOUNDRY-CPR-ROLLBOARDS.remove'}}">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+      {{/each}}
+
+      {{#unless tiles.length}}
+        <div class="fcr-canvas-empty">
+          {{#if activeSceneId}}
+            {{localize "FOUNDRY-CPR-ROLLBOARDS.dropHere"}}
+          {{else}}
+            {{#if hasAnyScenesInWorld}}
+              {{localize "FOUNDRY-CPR-ROLLBOARDS.pickScenesToStart"}}
+            {{else}}
+              {{localize "FOUNDRY-CPR-ROLLBOARDS.selectScene"}}
+            {{/if}}
+          {{/if}}
+        </div>
+      {{/unless}}
+    </div>
+  </div>
+
+  <div class="fcr-drawer{{#if drawerOpen}} fcr-drawer-open{{/if}}">
+    <div class="fcr-drawer-header">
+      <button type="button" class="fcr-drawer-toggle" data-action="toggleDrawer"
+              title="{{localize 'FOUNDRY-CPR-ROLLBOARDS.drawerToggle'}}">
+        <i class="fas {{#if drawerOpen}}fa-chevron-down{{else}}fa-chevron-up{{/if}}"></i>
+        <span>{{localize "FOUNDRY-CPR-ROLLBOARDS.drawer"}}</span>
+        <span class="fcr-drawer-count">{{drawCount}}</span>
+      </button>
+      <button type="button" class="fcr-btn fcr-drawer-clear" data-action="clearDraws"
+              {{#unless drawCount}}disabled{{/unless}}
+              title="{{localize 'FOUNDRY-CPR-ROLLBOARDS.drawerClear'}}">
+        <i class="fas fa-broom"></i>
+        {{localize "FOUNDRY-CPR-ROLLBOARDS.drawerClear"}}
+      </button>
+    </div>
+    {{#if drawerOpen}}
+      <div class="fcr-drawer-body">
+        {{#if drawCount}}
+          <div class="fcr-cards" data-action-scope="cards"></div>
+        {{else}}
+          <div class="fcr-drawer-empty">
+            {{localize "FOUNDRY-CPR-ROLLBOARDS.drawerEmpty"}}
+          </div>
+        {{/if}}
+      </div>
+    {{/if}}
+  </div>
+</div>
