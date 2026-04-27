@@ -916,6 +916,77 @@
   display: none !important;
 }
 
+/* Step kind radios + count-mode radios — pill row. */
+.foundry-cpr-rollboards .fcr-form-radios {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0;
+}
+
+.foundry-cpr-rollboards .fcr-form-radio {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px !important;
+  border: 1px solid #555 !important;
+  border-radius: 4px !important;
+  background: rgba(0, 0, 0, 0.25) !important;
+  color: #ccc !important;
+  cursor: pointer;
+  font-size: 11px !important;
+  user-select: none;
+  margin: 0 !important;
+}
+
+.foundry-cpr-rollboards .fcr-form-radio:hover {
+  border-color: #888 !important;
+  color: #fff !important;
+}
+
+.foundry-cpr-rollboards .fcr-form-radio.fcr-form-radio-on {
+  background: rgba(255, 100, 0, 0.2) !important;
+  border-color: var(--color-text-hyperlink, #ff6400) !important;
+  color: var(--color-text-hyperlink, #ff6400) !important;
+}
+
+.foundry-cpr-rollboards .fcr-form-radio > input[type="radio"] {
+  flex: 0 0 auto !important;
+  margin: 0 !important;
+  width: 12px !important;
+  height: 12px !important;
+}
+
+.foundry-cpr-rollboards .fcr-form-label-hint {
+  display: block !important;
+  font-size: 10px;
+  color: #888 !important;
+  font-style: italic;
+  text-transform: none;
+  letter-spacing: 0;
+  margin-top: 2px;
+  font-weight: 400;
+}
+
+/* Switch step info banner. */
+.foundry-cpr-rollboards .fcr-step-card-switch-info {
+  background: rgba(255, 100, 0, 0.1);
+  border: 1px solid rgba(255, 100, 0, 0.4);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 11px;
+  color: #ddd !important;
+  font-style: italic;
+  margin: 6px 0 12px 0;
+}
+
+/* Switch step gets a slightly tinted card so it visually differs from
+   normal table-rolling steps. */
+.foundry-cpr-rollboards .fcr-step-card.fcr-step-card-switch {
+  background: rgba(255, 100, 0, 0.04);
+  border-color: rgba(255, 100, 0, 0.4);
+}
+
 /* Drawer -------------------------------------------------------------- */
 
 .foundry-cpr-rollboards .fcr-drawer {

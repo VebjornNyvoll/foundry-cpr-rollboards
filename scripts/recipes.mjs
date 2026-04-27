@@ -3,17 +3,25 @@
  *
  * A "recipe" is a tree of steps that a tile rolls. The simplest recipe is one
  * step pointing at a single RollTable; the most complex is several nested
- * steps with per-step count, chance, and optional flags.
+ * steps with per-step count, chance, optional flags, and a switch step that
+ * picks a child by parent-result text.
  *
  * Step shape:
  *   {
  *     id: "uuid",
- *     tableUuid: "RollTable.abc",
+ *     kind: "normal" | "switch",   // switch = choose one child by parent text
+ *     tableUuid: "RollTable.abc",  // the table this step rolls (normal kind)
  *     label: "Archetype",          // override; defaults to table name
- *     count: 1,
- *     countMode: "fixed" | "prompt",
+ *     count: 1,                    // how many times to roll (fixed mode)
+ *     countMode: "fixed" | "prompt" | "random",
+ *     countFormula: "",            // dice formula when countMode = "random"
+ *     unique: false,               // re-roll on duplicate within the same parent
  *     optional: false,             // GM toggles per-roll in the popup
  *     chance: 100,                 // 1..100; rolled per parent result
+ *     matches: "",                 // case-insensitive substring of parent
+ *                                  //   result text; only consulted when this
+ *                                  //   step is a child of a switch. "*" or
+ *                                  //   "" = fallback when nothing else hits
  *     children: [Step, Step, ...]  // children fire once per parent result
  *   }
  *
@@ -23,7 +31,7 @@
  *   }
  *
  * Recipes live in a single world setting (`recipes` object keyed by id) so
- * they're shareable across scenes/tabs. Tiles only store { recipeId, x, y }.
+ * they're shareable across boards. Tiles only store { recipeId, x, y }.
  */
 
 import { MODULE_ID, SETTING_RECIPES } from "./constants.mjs";
@@ -33,14 +41,20 @@ export const DEFAULT_TILE_ICON = "icons/svg/d20-grey.svg";
 /* ---------- factory ---------- */
 
 export function makeStep(partial = {}) {
+  const validCountModes = new Set(["fixed", "prompt", "random"]);
+  const validKinds = new Set(["normal", "switch"]);
   return {
-    id: foundry.utils.randomID(),
+    id: partial.id ?? foundry.utils.randomID(),
+    kind: validKinds.has(partial.kind) ? partial.kind : "normal",
     tableUuid: partial.tableUuid ?? null,
     label: partial.label ?? "",
     count: Number.isFinite(partial.count) ? Math.max(1, partial.count) : 1,
-    countMode: partial.countMode === "prompt" ? "prompt" : "fixed",
+    countMode: validCountModes.has(partial.countMode) ? partial.countMode : "fixed",
+    countFormula: typeof partial.countFormula === "string" ? partial.countFormula : "",
+    unique: !!partial.unique,
     optional: !!partial.optional,
     chance: Number.isFinite(partial.chance) ? clamp(partial.chance, 1, 100) : 100,
+    matches: typeof partial.matches === "string" ? partial.matches : "",
     children: Array.isArray(partial.children) ? partial.children.map(makeStep) : []
   };
 }

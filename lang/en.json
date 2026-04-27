@@ -85,9 +85,31 @@
     "editor.add": "Add",
     "editor.noTables": "No roll tables in this world yet. Use Boards… → Import sample tables, or create one in the Roll Tables sidebar first.",
 
-    "samples.importButton": "Import sample tables",
-    "samples.created": "Created {count} sample roll table(s).",
-    "samples.allPresent": "All sample tables already exist in this world — nothing to import.",
+    "editor.kind.label": "Step type",
+    "editor.kind.normal": "Normal — rolls a table",
+    "editor.kind.switch": "Switch — picks one branch by parent result",
+    "editor.switchInfo": "This step doesn't roll a table itself. Instead it picks ONE child branch by matching the parent step's rolled text against each branch's \"Match parent result\" field, and runs that branch.",
+
+    "editor.matches.label": "Match parent result",
+    "editor.matches.hint": "Used only when this step is nested under a switch. Case-insensitive substring of the parent's rolled text. \"*\" or empty = fallback.",
+    "editor.matches.placeholder": "e.g. Cyberware",
+
+    "editor.countMode.label": "Count mode",
+    "editor.countMode.fixed": "Fixed",
+    "editor.countMode.prompt": "Prompt at roll time",
+    "editor.countMode.random": "Random (formula)",
+    "editor.countFormula.label": "Count formula",
+    "editor.countFormula.placeholder": "e.g. 1d10",
+
+    "editor.unique": "Unique rolls (re-roll on duplicates)",
+    "editor.uniqueTooltip": "If multiple rolls of this step come up the same, re-roll until each is unique. The corebook Night Market 'if you roll the same result twice, reroll' rule.",
+
+    "editor.branchesLabel": "BRANCHES · only the matching one fires",
+    "editor.childrenSimpleLabel": "CHILDREN · fire once per parent result",
+
+    "samples.importButton": "Import sample tables + Night Market recipe",
+    "samples.created": "Imported {tables} new roll table(s) and {recipe} new recipe.",
+    "samples.allPresent": "All sample content already imported — nothing new to add.",
     "samples.failed": "Failed to import sample tables — see console.",
 
     "step.label": "Step label",

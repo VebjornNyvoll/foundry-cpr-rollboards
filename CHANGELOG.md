@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.3.0 — Switch steps · unique rolls · random count formulas · Night Market generator
+
+Engine extension to express the Cyberpunk RED Night Market generator (corebook pp. 337-339) as a single fully-automated recipe. New step concepts:
+
+### Engine
+
+- **`kind: "switch"` step type.** A switch step doesn't roll a table itself. Instead it picks ONE child branch by matching the parent step's rolled text against each branch's `matches` field, and runs that branch in place. Maps directly to corebook procedures like *"depending on which category came up, roll on a different sub-table"*.
+- **`matches` field** on every step. Used only when the step is nested under a switch — case-insensitive substring of the parent's rolled text. `*` or empty = fallback (matches anything; used when no other branch hits).
+- **`unique: true` flag.** When a step rolls multiple times, re-roll on duplicates within the same parent. Maps to the corebook's *"if you roll the same result twice, reroll until you get a different result"* rule. Has a 24-roll retry budget per slot.
+- **`countMode: "random"` + `countFormula`.** A step's count can be a dice expression evaluated at roll time (e.g. `1d10`). Joins the existing `fixed` / `prompt` modes.
+
+### UI
+
+- Step cards now have a **kind toggle** (`Normal` / `Switch — picks one branch by parent result`) at the top.
+- Switch steps render with an orange-tinted background and a banner explaining the semantics; their fields collapse to just label + matches + branches list.
+- Normal steps gain a **count-mode radio** (`Fixed` / `Prompt at roll time` / `Random (formula)`). Switching to Random reveals a `Count formula` text input.
+- New **`Match parent result`** field on every step (only consulted when nested under a switch). Hint text explains when it's used.
+- New **`Unique rolls (re-roll on duplicates)`** checkbox alongside Optional.
+
+### Sample content — Night Market generator
+
+- **Six new corebook tables** in the sample-tables import: `Categories (1d6)` plus five 1d100 item tables (`Food and Drugs`, `Personal Electronics`, `Weapons and Armor`, `Cyberware`, `Clothing and Fashionware`, `Survival Gear`). All entries verbatim from corebook pp. 338-339, with prices and quality tiers preserved.
+- **One new pre-built recipe**: `"Cyberpunk RED — Night Market Generator"` — wires the corebook procedure end-to-end:
+  - Step 1 — `Goods category` (1d6, count: 2, unique: true) — rolls two distinct categories from the categories table.
+  - Step 2 (child of Step 1, `kind: switch`) — `On the shelves` — picks the matching items table by parent result text.
+  - Branches under the switch — one per category, each with `count: 1d10`, `unique: true` to reproduce *"roll 1d10 to determine how many types of items, then roll d100 that many times, reroll on duplicates"*.
+- The `Boards… → Import sample tables` button now creates all of the above in one click. Idempotent — re-running skips tables that already exist and the recipe if it already exists.
+
 ## 0.2.4 — Vertical form-style step cards; explicit "Add child step" button
 
 The 0.2.3 horizontal step-card layout collapsed into a vertical stack of orphan elements under Foundry v13's CSS — the head row's drag handle, label input, and delete button stacked, and the controls row's count/chance fields stacked. The fight wasn't winnable with flex: Foundry forces `display: block` / `width: 100%` on form children somewhere up the cascade.

@@ -772,6 +772,7 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
   }
 
   #renderStepCardHTML(step) {
+    const isSwitch = step.kind === "switch";
     const tableName = this.#tableNameCache.get(step.tableUuid) || "";
     const labelValue = step.label || tableName || "";
     const sourceText = tableName
@@ -780,15 +781,12 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
         ? `${L("editor.sourceLabel")}: ${L("editor.sourceMissing")}`
         : L("editor.sourceNone"));
     const sourceClass = step.tableUuid ? "" : " fcr-step-card-source-missing";
-    const optionalOn = !!step.optional;
-    const promptOn = step.countMode === "prompt";
+    const countMode = step.countMode === "prompt" || step.countMode === "random" ? step.countMode : "fixed";
     const childrenHTML = (step.children ?? []).map((c) => this.#renderStepCardHTML(c)).join("");
+    const childrenLabel = isSwitch ? L("editor.branchesLabel") : L("editor.childrenSimpleLabel");
 
-    // Vertical form layout — handle/delete are absolute-positioned overlays so
-    // we don't depend on a horizontal flex row that Foundry's CSS keeps
-    // collapsing. Form rows use !important via the CSS to win specificity.
     return `
-      <div class="fcr-step-card" data-step-id="${esc(step.id)}">
+      <div class="fcr-step-card${isSwitch ? " fcr-step-card-switch" : ""}" data-step-id="${esc(step.id)}">
         <span class="fcr-step-card-handle" draggable="true"
               title="${esc(L("editor.dragHandle"))}">⋮⋮</span>
         <button type="button" class="fcr-step-card-delete" data-step-action="delete"
@@ -796,6 +794,9 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
           <i class="fas fa-times"></i>
         </button>
         <div class="fcr-step-card-body">
+
+          ${this.#renderKindToggle(step, isSwitch)}
+
           <div class="fcr-form-row">
             <label class="fcr-form-label">${esc(L("editor.stepName"))}</label>
             <input type="text" class="fcr-form-input fcr-form-input-text"
@@ -803,45 +804,23 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
                    placeholder="${esc(L("editor.labelPlaceholder"))}"
                    data-step-field="label" />
           </div>
-          <div class="fcr-step-card-source${sourceClass}">
-            <i class="fas fa-link"></i>
-            <span>${esc(sourceText)}</span>
+
+          ${isSwitch
+            ? `<div class="fcr-step-card-switch-info">${esc(L("editor.switchInfo"))}</div>`
+            : this.#renderNormalStepFields(step, sourceText, sourceClass, countMode)}
+
+          <div class="fcr-form-row">
+            <label class="fcr-form-label">${esc(L("editor.matches.label"))}</label>
+            <input type="text" class="fcr-form-input"
+                   value="${esc(step.matches ?? "")}"
+                   placeholder="${esc(L("editor.matches.placeholder"))}"
+                   data-step-field="matches" />
+            <span class="fcr-form-label-hint">${esc(L("editor.matches.hint"))}</span>
           </div>
-          <div class="fcr-form-grid">
-            <div class="fcr-form-row">
-              <label class="fcr-form-label">${esc(L("editor.rollCount"))}</label>
-              <div class="fcr-input-group">
-                <input type="number" class="fcr-form-input fcr-form-input-num" min="1"
-                       value="${esc(String(step.count ?? 1))}"
-                       data-step-field="count" />
-                <span class="fcr-input-suffix">${esc(L("editor.times"))}</span>
-              </div>
-            </div>
-            <div class="fcr-form-row">
-              <label class="fcr-form-label">${esc(L("editor.chanceLabel"))}</label>
-              <div class="fcr-input-group">
-                <input type="number" class="fcr-form-input fcr-form-input-num" min="1" max="100"
-                       value="${esc(String(step.chance ?? 100))}"
-                       data-step-field="chance" />
-                <span class="fcr-input-suffix">%</span>
-              </div>
-            </div>
-          </div>
-          <div class="fcr-form-toggles">
-            <label class="fcr-form-toggle">
-              <input type="checkbox" ${promptOn ? "checked" : ""}
-                     data-step-toggle="prompt" />
-              <span>${esc(L("editor.promptForCount"))}</span>
-            </label>
-            <label class="fcr-form-toggle">
-              <input type="checkbox" ${optionalOn ? "checked" : ""}
-                     data-step-toggle="optional" />
-              <span>${esc(L("editor.optional"))}</span>
-            </label>
-          </div>
+
           <div class="fcr-step-card-children-section">
             <div class="fcr-step-card-children-header">
-              <span class="fcr-step-card-children-label">${esc(L("editor.childrenLabel"))}</span>
+              <span class="fcr-step-card-children-label">${esc(childrenLabel)}</span>
               <button type="button" class="fcr-add-child-btn" data-step-action="addChild"
                       title="${esc(L("editor.addChildTooltip"))}">
                 <i class="fas fa-plus"></i> ${esc(L("editor.addChildButton"))}
@@ -855,35 +834,153 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
       </div>`;
   }
 
-  #bindEditor(tree, recipe) {
-    // Inline edits — count/chance/label change handlers.
-    tree.addEventListener("change", async (event) => {
-      // Toggle checkboxes (prompt / optional).
-      const toggle = event.target?.dataset?.stepToggle;
-      if (toggle) {
-        const stepEl = event.target.closest(".fcr-step-card");
-        const stepId = stepEl?.dataset?.stepId;
-        if (!stepId) return;
-        const cur = getRecipe(recipe.id);
-        const step = cur ? findStep(cur, stepId) : null;
-        if (!step) return;
-        if (toggle === "prompt") {
-          step.countMode = event.target.checked ? "prompt" : "fixed";
-        } else if (toggle === "optional") {
-          step.optional = !!event.target.checked;
-        }
-        await upsertRecipe(cur);
-        return;
-      }
+  #renderKindToggle(step, isSwitch) {
+    return `
+      <div class="fcr-form-row">
+        <label class="fcr-form-label">${esc(L("editor.kind.label"))}</label>
+        <div class="fcr-form-radios">
+          <label class="fcr-form-radio${!isSwitch ? " fcr-form-radio-on" : ""}">
+            <input type="radio" name="kind-${esc(step.id)}" value="normal"
+                   ${!isSwitch ? "checked" : ""}
+                   data-step-kind="normal" />
+            <span>${esc(L("editor.kind.normal"))}</span>
+          </label>
+          <label class="fcr-form-radio${isSwitch ? " fcr-form-radio-on" : ""}">
+            <input type="radio" name="kind-${esc(step.id)}" value="switch"
+                   ${isSwitch ? "checked" : ""}
+                   data-step-kind="switch" />
+            <span>${esc(L("editor.kind.switch"))}</span>
+          </label>
+        </div>
+      </div>`;
+  }
 
-      const field = event.target?.dataset?.stepField;
-      if (!field) return;
+  #renderNormalStepFields(step, sourceText, sourceClass, countMode) {
+    const optionalOn = !!step.optional;
+    const uniqueOn = !!step.unique;
+    return `
+      <div class="fcr-step-card-source${sourceClass}">
+        <i class="fas fa-link"></i>
+        <span>${esc(sourceText)}</span>
+      </div>
+
+      <div class="fcr-form-row">
+        <label class="fcr-form-label">${esc(L("editor.countMode.label"))}</label>
+        <div class="fcr-form-radios">
+          <label class="fcr-form-radio${countMode === "fixed" ? " fcr-form-radio-on" : ""}">
+            <input type="radio" name="cm-${esc(step.id)}" value="fixed"
+                   ${countMode === "fixed" ? "checked" : ""}
+                   data-step-countmode="fixed" />
+            <span>${esc(L("editor.countMode.fixed"))}</span>
+          </label>
+          <label class="fcr-form-radio${countMode === "prompt" ? " fcr-form-radio-on" : ""}">
+            <input type="radio" name="cm-${esc(step.id)}" value="prompt"
+                   ${countMode === "prompt" ? "checked" : ""}
+                   data-step-countmode="prompt" />
+            <span>${esc(L("editor.countMode.prompt"))}</span>
+          </label>
+          <label class="fcr-form-radio${countMode === "random" ? " fcr-form-radio-on" : ""}">
+            <input type="radio" name="cm-${esc(step.id)}" value="random"
+                   ${countMode === "random" ? "checked" : ""}
+                   data-step-countmode="random" />
+            <span>${esc(L("editor.countMode.random"))}</span>
+          </label>
+        </div>
+      </div>
+
+      ${countMode === "random"
+        ? `<div class="fcr-form-row">
+             <label class="fcr-form-label">${esc(L("editor.countFormula.label"))}</label>
+             <input type="text" class="fcr-form-input"
+                    value="${esc(step.countFormula ?? "")}"
+                    placeholder="${esc(L("editor.countFormula.placeholder"))}"
+                    data-step-field="countFormula" />
+           </div>`
+        : countMode === "fixed"
+          ? `<div class="fcr-form-grid">
+               <div class="fcr-form-row">
+                 <label class="fcr-form-label">${esc(L("editor.rollCount"))}</label>
+                 <div class="fcr-input-group">
+                   <input type="number" class="fcr-form-input fcr-form-input-num" min="1"
+                          value="${esc(String(step.count ?? 1))}"
+                          data-step-field="count" />
+                   <span class="fcr-input-suffix">${esc(L("editor.times"))}</span>
+                 </div>
+               </div>
+               <div class="fcr-form-row">
+                 <label class="fcr-form-label">${esc(L("editor.chanceLabel"))}</label>
+                 <div class="fcr-input-group">
+                   <input type="number" class="fcr-form-input fcr-form-input-num" min="1" max="100"
+                          value="${esc(String(step.chance ?? 100))}"
+                          data-step-field="chance" />
+                   <span class="fcr-input-suffix">%</span>
+                 </div>
+               </div>
+             </div>`
+          : `<div class="fcr-form-row">
+               <label class="fcr-form-label">${esc(L("editor.chanceLabel"))}</label>
+               <div class="fcr-input-group">
+                 <input type="number" class="fcr-form-input fcr-form-input-num" min="1" max="100"
+                        value="${esc(String(step.chance ?? 100))}"
+                        data-step-field="chance" />
+                 <span class="fcr-input-suffix">%</span>
+               </div>
+             </div>`}
+
+      <div class="fcr-form-toggles">
+        <label class="fcr-form-toggle" title="${esc(L("editor.uniqueTooltip"))}">
+          <input type="checkbox" ${uniqueOn ? "checked" : ""}
+                 data-step-toggle="unique" />
+          <span>${esc(L("editor.unique"))}</span>
+        </label>
+        <label class="fcr-form-toggle">
+          <input type="checkbox" ${optionalOn ? "checked" : ""}
+                 data-step-toggle="optional" />
+          <span>${esc(L("editor.optional"))}</span>
+        </label>
+      </div>`;
+  }
+
+  #bindEditor(tree, recipe) {
+    // Inline edits — count/chance/label/matches/formula + kind/countMode radios + toggles.
+    tree.addEventListener("change", async (event) => {
       const stepEl = event.target.closest(".fcr-step-card");
       const stepId = stepEl?.dataset?.stepId;
       if (!stepId) return;
       const cur = getRecipe(recipe.id);
       const step = cur ? findStep(cur, stepId) : null;
       if (!step) return;
+
+      // Kind radio (normal vs switch) — re-render to show/hide source/count.
+      const kind = event.target?.dataset?.stepKind;
+      if (kind && event.target.checked) {
+        step.kind = kind === "switch" ? "switch" : "normal";
+        await upsertRecipe(cur);
+        this.render(false);
+        return;
+      }
+
+      // Count-mode radio — re-render to show/hide count vs formula.
+      const cmode = event.target?.dataset?.stepCountmode;
+      if (cmode && event.target.checked) {
+        step.countMode = (cmode === "prompt" || cmode === "random") ? cmode : "fixed";
+        await upsertRecipe(cur);
+        this.#renderEditor();
+        return;
+      }
+
+      // Boolean toggles (unique, optional).
+      const toggle = event.target?.dataset?.stepToggle;
+      if (toggle) {
+        if (toggle === "unique") step.unique = !!event.target.checked;
+        else if (toggle === "optional") step.optional = !!event.target.checked;
+        await upsertRecipe(cur);
+        return;
+      }
+
+      // Text/number fields.
+      const field = event.target?.dataset?.stepField;
+      if (!field) return;
       if (field === "label") {
         step.label = String(event.target.value ?? "").trim();
       } else if (field === "count") {
@@ -892,6 +989,10 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
       } else if (field === "chance") {
         step.chance = Math.max(1, Math.min(100, Math.floor(Number(event.target.value) || 100)));
         event.target.value = String(step.chance);
+      } else if (field === "matches") {
+        step.matches = String(event.target.value ?? "").trim();
+      } else if (field === "countFormula") {
+        step.countFormula = String(event.target.value ?? "").trim();
       }
       await upsertRecipe(cur);
     });
