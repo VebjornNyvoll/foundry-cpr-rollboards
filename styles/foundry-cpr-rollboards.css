@@ -674,86 +674,180 @@
   opacity: 0.4;
 }
 
-.foundry-cpr-rollboards .fcr-step-card-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.05);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  cursor: default;
+/* Step card body — vertical form. Uses !important on layout-critical
+   declarations because Foundry v13's defaults try to set
+   display: block / width: 100% / height: auto on form elements. */
+
+.foundry-cpr-rollboards .fcr-step-card {
+  position: relative;
 }
 
 .foundry-cpr-rollboards .fcr-step-card-handle {
+  position: absolute !important;
+  top: 8px;
+  left: 8px;
+  display: inline-block !important;
   cursor: grab;
-  color: var(--color-text-light-secondary, #888);
+  color: #aaa !important;
   user-select: none;
-  padding: 0 4px;
+  padding: 2px 4px;
   font-size: 14px;
   line-height: 1;
-  flex: 0 0 auto;
+  z-index: 2;
 }
 
 .foundry-cpr-rollboards .fcr-step-card-handle:active {
   cursor: grabbing;
 }
 
-.foundry-cpr-rollboards .fcr-step-card-label {
-  flex: 1 1 auto;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--color-border-light-tertiary, #666);
-  border-radius: 3px;
-  color: var(--color-text-light-primary, #eee);
-  padding: 5px 8px;
-  font-size: 13px;
-  font-weight: 600;
-  min-width: 0;
-  width: auto;
-  height: auto;
-}
-
-.foundry-cpr-rollboards .fcr-step-card-label:focus {
-  border-color: var(--color-text-hyperlink, #ff6400);
-  outline: none;
-}
-
 .foundry-cpr-rollboards .fcr-step-card-delete {
-  flex: 0 0 auto;
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--color-text-light-secondary, #aaa);
+  position: absolute !important;
+  top: 6px;
+  right: 6px;
+  width: 24px !important;
+  height: 24px !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  color: #aaa !important;
   cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 3px;
-  font-size: 12px;
-  line-height: 1;
-  width: auto;
-  height: auto;
+  border-radius: 3px !important;
+  font-size: 12px !important;
+  line-height: 1 !important;
+  z-index: 2;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: 0 0 auto !important;
 }
 
 .foundry-cpr-rollboards .fcr-step-card-delete:hover {
-  background: rgba(200, 30, 30, 0.25);
-  color: #f88;
+  background: rgba(200, 30, 30, 0.3) !important;
+  color: #fff !important;
 }
 
+.foundry-cpr-rollboards .fcr-step-card-body {
+  padding: 14px 16px 14px 36px;
+}
+
+/* Form rows — label above input, vertically stacked. */
+.foundry-cpr-rollboards .fcr-form-row {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.foundry-cpr-rollboards .fcr-form-row > .fcr-form-label {
+  display: block !important;
+  font-size: 10px !important;
+  color: #ccc !important;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 500;
+  margin: 0 !important;
+}
+
+.foundry-cpr-rollboards .fcr-form-input {
+  background: rgba(0, 0, 0, 0.4) !important;
+  border: 1px solid #777 !important;
+  border-radius: 3px !important;
+  color: #fff !important;
+  padding: 6px 8px !important;
+  font-size: 13px !important;
+  font-family: inherit !important;
+  height: auto !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+}
+
+.foundry-cpr-rollboards .fcr-form-input:focus {
+  border-color: var(--color-text-hyperlink, #ff6400) !important;
+  outline: none !important;
+  box-shadow: 0 0 0 1px rgba(255, 100, 0, 0.3) !important;
+}
+
+.foundry-cpr-rollboards .fcr-form-input-text {
+  width: 100% !important;
+}
+
+.foundry-cpr-rollboards .fcr-form-input-num {
+  width: 70px !important;
+  text-align: right;
+  flex: 0 0 auto !important;
+}
+
+.foundry-cpr-rollboards .fcr-input-group {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+}
+
+.foundry-cpr-rollboards .fcr-input-suffix {
+  color: #bbb !important;
+  font-size: 12px;
+  flex: 0 0 auto;
+}
+
+/* Two-column grid for count/chance, falling back to single column on narrow.
+   Grid columns are deterministic — Foundry's defaults can't collapse them. */
+.foundry-cpr-rollboards .fcr-form-grid {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+}
+
+@media (max-width: 480px) {
+  .foundry-cpr-rollboards .fcr-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Toggles — checkbox + text, vertically stacked. */
+.foundry-cpr-rollboards .fcr-form-toggles {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.foundry-cpr-rollboards .fcr-form-toggle {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  color: #e0e0e0 !important;
+  margin: 0 !important;
+}
+
+.foundry-cpr-rollboards .fcr-form-toggle > input[type="checkbox"] {
+  flex: 0 0 auto !important;
+  margin: 0 !important;
+  width: 16px !important;
+  height: 16px !important;
+}
+
+/* Source line under the step name. */
 .foundry-cpr-rollboards .fcr-step-card-source {
-  display: flex;
+  display: flex !important;
   align-items: center;
   gap: 6px;
-  padding: 6px 14px;
   font-size: 11px;
-  color: var(--color-text-light-secondary, #888);
-  background: rgba(0, 0, 0, 0.18);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: #aaa !important;
+  margin-bottom: 12px;
+  margin-top: -4px;
 }
 
 .foundry-cpr-rollboards .fcr-step-card-source.fcr-step-card-source-missing {
-  color: #c66;
+  color: #c66 !important;
 }
 
 .foundry-cpr-rollboards .fcr-step-card-source > i {
   font-size: 10px;
   opacity: 0.7;
+  flex: 0 0 auto;
 }
 
 .foundry-cpr-rollboards .fcr-step-card-source > span {
@@ -763,99 +857,63 @@
   white-space: nowrap;
 }
 
-.foundry-cpr-rollboards .fcr-step-card-controls {
-  display: flex;
-  flex-wrap: wrap;
+/* Children section + add-child button. */
+.foundry-cpr-rollboards .fcr-step-card-children-section {
+  margin-top: 6px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.foundry-cpr-rollboards .fcr-step-card-children-header {
+  display: flex !important;
   align-items: center;
-  gap: 18px;
-  padding: 10px 14px;
-  font-size: 12px;
-}
-
-.foundry-cpr-rollboards .fcr-step-card-field {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: 0 0 auto;
-}
-
-.foundry-cpr-rollboards .fcr-step-card-field > label {
-  color: var(--color-text-light-secondary, #aaa);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.foundry-cpr-rollboards .fcr-step-card-input {
-  flex: 0 0 auto;
-  width: 64px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--color-border-light-tertiary, #666);
-  border-radius: 3px;
-  color: var(--color-text-light-primary, #eee);
-  padding: 4px 6px;
-  font-size: 13px;
-  text-align: right;
-  height: auto;
-}
-
-.foundry-cpr-rollboards .fcr-step-card-input:focus {
-  border-color: var(--color-text-hyperlink, #ff6400);
-  outline: none;
-}
-
-.foundry-cpr-rollboards .fcr-step-card-suffix {
-  color: var(--color-text-light-secondary, #aaa);
-  font-size: 12px;
-}
-
-.foundry-cpr-rollboards .fcr-step-card-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  user-select: none;
-  font-size: 12px;
-  color: var(--color-text-light-primary, #ddd);
-  flex: 0 0 auto;
-}
-
-.foundry-cpr-rollboards .fcr-step-card-toggle > input[type="checkbox"] {
-  flex: 0 0 auto;
-  margin: 0;
-  width: auto;
-  height: auto;
-}
-
-.foundry-cpr-rollboards .fcr-step-card-children {
-  background: rgba(0, 0, 0, 0.18);
-  padding: 8px 12px 12px calc(12px + 16px);
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  position: relative;
-}
-
-.foundry-cpr-rollboards .fcr-step-card-children::before {
-  content: "";
-  position: absolute;
-  left: 12px;
-  top: 8px;
-  bottom: 12px;
-  width: 2px;
-  background: rgba(255, 100, 0, 0.25);
-  border-radius: 2px;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
 }
 
 .foundry-cpr-rollboards .fcr-step-card-children-label {
-  font-size: 10px;
+  font-size: 10px !important;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--color-text-light-secondary, #888);
-  margin-bottom: 2px;
+  color: #aaa !important;
+  flex: 1 1 auto;
+}
+
+.foundry-cpr-rollboards .fcr-add-child-btn {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px !important;
+  border: 1px solid rgba(255, 100, 0, 0.5) !important;
+  border-radius: 3px !important;
+  background: rgba(255, 100, 0, 0.1) !important;
+  color: var(--color-text-hyperlink, #ff6400) !important;
+  font-size: 11px !important;
+  cursor: pointer;
+  width: auto !important;
+  height: auto !important;
+  flex: 0 0 auto !important;
+  font-family: inherit !important;
+}
+
+.foundry-cpr-rollboards .fcr-add-child-btn:hover {
+  background: rgba(255, 100, 0, 0.22) !important;
+  border-color: var(--color-text-hyperlink, #ff6400) !important;
+}
+
+.foundry-cpr-rollboards .fcr-step-card-children {
+  position: relative;
+  margin-left: 6px;
+  padding-left: 16px;
+  border-left: 2px solid rgba(255, 100, 0, 0.3);
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 10px;
+}
+
+.foundry-cpr-rollboards .fcr-step-card-children:empty {
+  display: none !important;
 }
 
 /* Drawer -------------------------------------------------------------- */

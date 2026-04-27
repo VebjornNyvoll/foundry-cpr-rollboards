@@ -784,55 +784,74 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
     const promptOn = step.countMode === "prompt";
     const childrenHTML = (step.children ?? []).map((c) => this.#renderStepCardHTML(c)).join("");
 
+    // Vertical form layout — handle/delete are absolute-positioned overlays so
+    // we don't depend on a horizontal flex row that Foundry's CSS keeps
+    // collapsing. Form rows use !important via the CSS to win specificity.
     return `
       <div class="fcr-step-card" data-step-id="${esc(step.id)}">
-        <div class="fcr-step-card-head" draggable="true">
-          <span class="fcr-step-card-handle" title="${esc(L("editor.dragHandle"))}">⋮⋮</span>
-          <input type="text" class="fcr-step-card-label"
-                 value="${esc(labelValue)}"
-                 placeholder="${esc(L("editor.labelPlaceholder"))}"
-                 data-step-field="label" />
-          <button type="button" class="fcr-step-card-delete" data-step-action="delete"
-                  title="${esc(L("editor.deleteStep"))}">
-            <i class="fas fa-times"></i>
-          </button>
-        </div>
-        <div class="fcr-step-card-source${sourceClass}">
-          <i class="fas fa-link"></i>
-          <span>${esc(sourceText)}</span>
-        </div>
-        <div class="fcr-step-card-controls">
-          <div class="fcr-step-card-field">
-            <label>${esc(L("editor.rollCount"))}</label>
-            <input type="number" class="fcr-step-card-input fcr-step-card-count" min="1"
-                   value="${esc(String(step.count ?? 1))}"
-                   data-step-field="count" />
-            <span class="fcr-step-card-suffix">${esc(L("editor.times"))}</span>
+        <span class="fcr-step-card-handle" draggable="true"
+              title="${esc(L("editor.dragHandle"))}">⋮⋮</span>
+        <button type="button" class="fcr-step-card-delete" data-step-action="delete"
+                title="${esc(L("editor.deleteStep"))}">
+          <i class="fas fa-times"></i>
+        </button>
+        <div class="fcr-step-card-body">
+          <div class="fcr-form-row">
+            <label class="fcr-form-label">${esc(L("editor.stepName"))}</label>
+            <input type="text" class="fcr-form-input fcr-form-input-text"
+                   value="${esc(labelValue)}"
+                   placeholder="${esc(L("editor.labelPlaceholder"))}"
+                   data-step-field="label" />
           </div>
-          <div class="fcr-step-card-field">
-            <label>${esc(L("editor.chanceLabel"))}</label>
-            <input type="number" class="fcr-step-card-input fcr-step-card-chance" min="1" max="100"
-                   value="${esc(String(step.chance ?? 100))}"
-                   data-step-field="chance" />
-            <span class="fcr-step-card-suffix">%</span>
+          <div class="fcr-step-card-source${sourceClass}">
+            <i class="fas fa-link"></i>
+            <span>${esc(sourceText)}</span>
           </div>
-          <label class="fcr-step-card-toggle">
-            <input type="checkbox" ${promptOn ? "checked" : ""}
-                   data-step-toggle="prompt" />
-            <span>${esc(L("editor.promptForCount"))}</span>
-          </label>
-          <label class="fcr-step-card-toggle">
-            <input type="checkbox" ${optionalOn ? "checked" : ""}
-                   data-step-toggle="optional" />
-            <span>${esc(L("editor.optional"))}</span>
-          </label>
+          <div class="fcr-form-grid">
+            <div class="fcr-form-row">
+              <label class="fcr-form-label">${esc(L("editor.rollCount"))}</label>
+              <div class="fcr-input-group">
+                <input type="number" class="fcr-form-input fcr-form-input-num" min="1"
+                       value="${esc(String(step.count ?? 1))}"
+                       data-step-field="count" />
+                <span class="fcr-input-suffix">${esc(L("editor.times"))}</span>
+              </div>
+            </div>
+            <div class="fcr-form-row">
+              <label class="fcr-form-label">${esc(L("editor.chanceLabel"))}</label>
+              <div class="fcr-input-group">
+                <input type="number" class="fcr-form-input fcr-form-input-num" min="1" max="100"
+                       value="${esc(String(step.chance ?? 100))}"
+                       data-step-field="chance" />
+                <span class="fcr-input-suffix">%</span>
+              </div>
+            </div>
+          </div>
+          <div class="fcr-form-toggles">
+            <label class="fcr-form-toggle">
+              <input type="checkbox" ${promptOn ? "checked" : ""}
+                     data-step-toggle="prompt" />
+              <span>${esc(L("editor.promptForCount"))}</span>
+            </label>
+            <label class="fcr-form-toggle">
+              <input type="checkbox" ${optionalOn ? "checked" : ""}
+                     data-step-toggle="optional" />
+              <span>${esc(L("editor.optional"))}</span>
+            </label>
+          </div>
+          <div class="fcr-step-card-children-section">
+            <div class="fcr-step-card-children-header">
+              <span class="fcr-step-card-children-label">${esc(L("editor.childrenLabel"))}</span>
+              <button type="button" class="fcr-add-child-btn" data-step-action="addChild"
+                      title="${esc(L("editor.addChildTooltip"))}">
+                <i class="fas fa-plus"></i> ${esc(L("editor.addChildButton"))}
+              </button>
+            </div>
+            ${childrenHTML
+              ? `<div class="fcr-step-card-children">${childrenHTML}</div>`
+              : ""}
+          </div>
         </div>
-        ${childrenHTML
-          ? `<div class="fcr-step-card-children">
-               <div class="fcr-step-card-children-label">${esc(L("editor.childrenLabel"))}</div>
-               ${childrenHTML}
-             </div>`
-          : ""}
       </div>`;
   }
 
@@ -877,18 +896,20 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
       await upsertRecipe(cur);
     });
 
-    // Step delete (the card's × button).
+    // Card actions: delete + add child step.
     tree.addEventListener("click", async (event) => {
       const actionBtn = event.target.closest("[data-step-action]");
       if (!actionBtn) return;
       event.preventDefault();
+      event.stopPropagation();
       const stepEl = actionBtn.closest(".fcr-step-card");
       const stepId = stepEl?.dataset?.stepId;
       if (!stepId) return;
+      const action = actionBtn.dataset.stepAction;
       const cur = getRecipe(recipe.id);
       const step = cur ? findStep(cur, stepId) : null;
       if (!step) return;
-      if (actionBtn.dataset.stepAction === "delete") {
+      if (action === "delete") {
         const hasChildren = (step.children?.length ?? 0) > 0;
         if (hasChildren) {
           const ok = await Dialog.confirm({
@@ -901,6 +922,8 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
         removeStep(cur, stepId);
         await upsertRecipe(cur);
         this.render(false);
+      } else if (action === "addChild") {
+        await this.#promptAddChildStep(stepId);
       }
     });
 
@@ -973,17 +996,17 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
       this.render(false);
     });
 
-    // Internal drag of a step (its head bar) for reorder.
-    tree.querySelectorAll(".fcr-step-card-head[draggable=true]").forEach((head) => {
-      head.addEventListener("dragstart", (event) => {
-        const id = head.closest(".fcr-step-card")?.dataset?.stepId;
+    // Internal drag of a step (via the small ⋮⋮ handle) for reorder.
+    tree.querySelectorAll(".fcr-step-card-handle[draggable=true]").forEach((handle) => {
+      handle.addEventListener("dragstart", (event) => {
+        const id = handle.closest(".fcr-step-card")?.dataset?.stepId;
         if (!id) return;
         event.dataTransfer.setData("application/x-fcr-step", id);
         event.dataTransfer.effectAllowed = "move";
-        head.closest(".fcr-step-card")?.classList.add("fcr-step-card-dragging");
+        handle.closest(".fcr-step-card")?.classList.add("fcr-step-card-dragging");
       });
-      head.addEventListener("dragend", () => {
-        head.closest(".fcr-step-card")?.classList.remove("fcr-step-card-dragging");
+      handle.addEventListener("dragend", () => {
+        handle.closest(".fcr-step-card")?.classList.remove("fcr-step-card-dragging");
       });
     });
 
@@ -1001,6 +1024,52 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
         this.render(false);
       });
     }
+  }
+
+  /**
+   * Open a picker dialog listing every world RollTable. Picking one adds it
+   * as a child of the given step. Discoverable alternative to drag-drop —
+   * the GM no longer has to know which area accepts a child drop.
+   */
+  async #promptAddChildStep(parentStepId) {
+    const tables = Array.from(game.tables ?? [])
+      .sort((a, b) => a.name.localeCompare(b.name));
+    if (!tables.length) {
+      ui.notifications.warn(L("editor.noTables"));
+      return;
+    }
+    const options = tables.map((t) =>
+      `<option value="${esc(t.uuid)}">${esc(t.name)}</option>`
+    ).join("");
+
+    const tableUuid = await Dialog.prompt({
+      title: L("editor.pickTableTitle"),
+      content: `
+        <div class="fcr-dialog-form">
+          <p class="fcr-dialog-hint">${esc(L("editor.pickTableHint"))}</p>
+          <label>${esc(L("editor.pickTableLabel"))}</label>
+          <select name="table" autofocus>${options}</select>
+        </div>`,
+      label: L("editor.add"),
+      callback: (h) => {
+        const r = h instanceof jQuery ? h[0] : h;
+        return r.querySelector("select[name=table]")?.value;
+      },
+      rejectClose: false,
+      options: { classes: ["foundry-cpr-rollboards", "dialog"] }
+    });
+
+    if (!tableUuid) return;
+    const table = await fromUuid(tableUuid).catch(() => null);
+    if (!table) {
+      ui.notifications.warn(L("missingTable"));
+      return;
+    }
+    const cur = getRecipe(this.#editingRecipeId);
+    if (!cur) return;
+    addStep(cur, parentStepId, makeStep({ tableUuid, label: table.name }));
+    await upsertRecipe(cur);
+    this.render(false);
   }
 
   /* -------------------------------------------- */

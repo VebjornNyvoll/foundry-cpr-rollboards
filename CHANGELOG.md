@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.4 — Vertical form-style step cards; explicit "Add child step" button
+
+The 0.2.3 horizontal step-card layout collapsed into a vertical stack of orphan elements under Foundry v13's CSS — the head row's drag handle, label input, and delete button stacked, and the controls row's count/chance fields stacked. The fight wasn't winnable with flex: Foundry forces `display: block` / `width: 100%` on form children somewhere up the cascade.
+
+This release abandons the horizontal head row entirely. Step cards are now a **vertical form** with absolute-positioned drag handle (top-left) and delete button (top-right), and labelled form rows underneath. Layout-critical declarations use `!important` to overpower Foundry's defaults.
+
+- **New step card layout** — vertically stacked form rows with `LABEL` above each input. Step name → Source → Roll count + Chance (2-col grid, collapses to 1 col under 480px) → toggles → children section.
+- **Text colour fixed** — explicit `color: #fff` / `#ccc` / `#aaa` with `!important` so Foundry's defaults can't darken them. Backgrounds are `rgba(0, 0, 0, 0.4)` so the white text reads cleanly.
+- **"Add child step" button** on every card — opens a picker dialog listing every world `RollTable` and adds the chosen one as a child. **Discoverable alternative to the drag-on-card semantic** which was confusing because the drag-target wasn't visible. Drag-drop still works for everyone who liked it.
+- **Drag-drop semantics**, for the record (no shift modifier — that was never wired):
+  - Drop on **canvas** (empty board) → new tile (root recipe)
+  - Drop on an **existing tile** → chains a sibling root step into that recipe
+  - Drop on a **step card in the editor** → nests as a child of that step
+  - Drop on the **drop lane** at the bottom of the editor → sibling root step
+  - Or just click **+ Add child step** on any card.
+
 ## 0.2.3 — Full-width recipe editor; sample roll tables import
 
 The 0.2.0 cramped 360px side-panel inspector is replaced by a **full-width editor view** that takes over the canvas area while editing. Step cards are substantial blocks with proper form layout instead of a single row of icons crammed shoulder-to-shoulder.
