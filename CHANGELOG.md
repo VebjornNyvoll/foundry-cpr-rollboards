@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 — Fix release workflow: strip "v" prefix from version
+
+Every release before this (0.1.0, 0.1.1, 0.2.0) shipped a `module.json` with `"version": "vX.Y.Z"` because the GitHub Actions workflow substituted the git tag name verbatim. Foundry's manifest validator rejects non-semver version strings, so the module installed but didn't appear in the module list — silent failure.
+
+Fixed by stripping the leading `v` before the variable substitution in `.github/workflows/release.yml`. No source code changes; this is purely a packaging fix.
+
+If you have any 0.1.x or 0.2.0 install on a GM machine, uninstall and reinstall from the v0.2.1 manifest URL.
+
 ## 0.2.0 — Boards model + redesigned inspector (BREAKING)
 
 Rip-and-replace of the macro-dashboards-inherited scene/preset architecture, which never made sense for recipes. Recipes are themselves the named persistent thing — wrapping them in tiles inside scenes inside presets gave four levels of organisation for what should be two.
