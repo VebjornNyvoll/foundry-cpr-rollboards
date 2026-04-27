@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.0 — CPR Mook generator
+
+- **Make Actor** button on every drawer result row, when the active system is `cyberpunk-red-core`. Opens the Mook dialog seeded with the rolled NPC name and a structured notes summary of the parent rolls.
+- **Mook archetypes**: Booster (gang grunt), Tech (gang specialist), Solo (combat specialist), Generic NPC. Each ships with a stat block, suggested role, and an inline skill package.
+- **Compendium item embedding**: skills, role, weapons, armor, and cyberware are pulled from the cyberpunk-red-core compendiums when present (multiple pack-id candidates probed). Missing items are skipped silently — the Actor is always created with stats + role + a usable skill set, never a hard failure.
+- **Place token**: dialog has both "Create" and "Create + place token" buttons; the latter drops a hostile-disposition token at the centre of the active scene's view.
+
 ## 0.0.2 — Chained recipes + inspector + Roll-all
 
 - **Chained recipes** are now buildable through the UI:

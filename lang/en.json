@@ -101,6 +101,22 @@
     "popup.editInInspector": "Open inspector",
     "popup.delete": "Delete tile",
     "popup.deleteConfirm": "Delete tile \"{name}\" from this tab? The recipe stays in the library.",
-    "popup.title": "Quick edit"
+    "popup.title": "Quick edit",
+
+    "mook.button": "Make Actor",
+    "mook.buttonTooltip": "Create a Cyberpunk Red mook actor from this result.",
+    "mook.dialogTitle": "Make Cyberpunk Red mook",
+    "mook.name": "Name",
+    "mook.archetype": "Archetype",
+    "mook.role": "Role",
+    "mook.notes": "Notes",
+    "mook.hint": "Stats and a starter skill package come from the archetype. Items load from cyberpunk-red-core compendiums when present; missing items are skipped silently and you can add them on the actor sheet.",
+    "mook.create": "Create",
+    "mook.createAndPlace": "Create + place token",
+    "mook.created": "Mook \"{name}\" created.",
+    "mook.systemMissing": "Make Actor only works when the cyberpunk-red-core system is active.",
+    "mook.createFailed": "Could not create the mook actor — see console.",
+    "mook.tokenFailed": "Mook created, but placing the token failed — see console.",
+    "mook.noScene": "Mook created, but no active scene to place a token on."
   }
 }

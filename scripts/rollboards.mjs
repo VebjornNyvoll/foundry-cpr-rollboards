@@ -47,6 +47,7 @@ import {
 } from "./recipes.mjs";
 
 import { rollRecipe } from "./engine.mjs";
+import { isCprActive, openMookDialog } from "./cpr-mook.mjs";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -56,6 +57,14 @@ function esc(s) { return Handlebars.escapeExpression(String(s ?? "")); }
 
 function emptyData() {
   return { showNames: true, tiles: [] };
+}
+
+/** Strip HTML tags from a roll-table result so we can use it as a name/notes seed. */
+function stripTags(html) {
+  if (!html) return "";
+  const div = document.createElement("div");
+  div.innerHTML = String(html);
+  return (div.textContent ?? "").replace(/\s+/g, " ").trim();
 }
 
 function readData(scene) {
@@ -1041,8 +1050,13 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
       textHTML = `<span class="fcr-node-text">${node.result?.text ?? ""}</span>`;
     }
 
+    const mookBtn = (!node.skipped && isCprActive())
+      ? `<button type="button" class="fcr-node-action" data-node-action="mook" data-node-id="${esc(node.id)}"
+                title="${esc(L("mook.buttonTooltip"))}"><i class="fas fa-user-plus"></i></button>`
+      : "";
     const actions = node.skipped ? "" : `
       <div class="fcr-node-actions">
+        ${mookBtn}
         <button type="button" class="fcr-node-action" data-node-action="toChat" data-node-id="${esc(node.id)}"
                 title="${esc(L("result.toChat"))}"><i class="fas fa-comment"></i></button>
       </div>`;
@@ -1116,9 +1130,33 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
         if (!node) return;
         if (action === "toChat") {
           await this.#sendNodeToChat(card, node);
+        } else if (action === "mook") {
+          await openMookDialog({
+            name: stripTags(node.result?.text) || card.recipeName,
+            notes: this.#buildMookNotes(card, node)
+          });
         }
       }
     });
+  }
+
+  /**
+   * Build a seed `notes` string for the Mook dialog from a card + node.
+   * Includes the recipe name, the node's label/text, and any sibling rolls
+   * under the same card so the GM has context on the actor sheet.
+   */
+  #buildMookNotes(card, node) {
+    const lines = [`Generated from "${card.recipeName}" via CPR Rollboards.`];
+    const flatten = (n, depth = 0) => {
+      if (n.skipped) return;
+      const text = stripTags(n.result?.text);
+      if (text) lines.push(`${"  ".repeat(depth)}- ${n.stepLabel ? `${n.stepLabel}: ` : ""}${text}`);
+      for (const g of n.childGroups ?? []) {
+        for (const c of g.nodes ?? []) flatten(c, depth + 1);
+      }
+    };
+    for (const root of card.nodes ?? []) flatten(root);
+    return lines.join("\n");
   }
 
   #findNode(card, nodeId) {

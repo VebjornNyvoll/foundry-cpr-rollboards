@@ -2,7 +2,7 @@
   "id": "foundry-cpr-rollboards",
   "title": "CPR Rollboards",
   "description": "GM dashboard for chained roll tables. Drag any RollTable onto a canvas tile, click to roll, see results in an in-module drawer (no chat spam). Compose chained recipes — e.g. Gang → 6 NPCs → Job + Quirk 60% — then roll the whole tile in one click. Includes a Cyberpunk Red Mook generator that turns a rolled NPC into a drop-ready Actor when the cyberpunk-red-core system is active.",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "authors": [
     {
       "name": "Vebjørn Nyvoll",
@@ -25,7 +25,7 @@
   ],
   "url": "https://github.com/VebjornNyvoll/foundry-cpr-rollboards",
   "manifest": "https://github.com/VebjornNyvoll/foundry-cpr-rollboards/releases/latest/download/module.json",
-  "download": "https://github.com/VebjornNyvoll/foundry-cpr-rollboards/releases/download/v0.0.2/module.zip",
+  "download": "https://github.com/VebjornNyvoll/foundry-cpr-rollboards/releases/download/v0.1.0/module.zip",
   "bugs": "https://github.com/VebjornNyvoll/foundry-cpr-rollboards/issues",
   "readme": "https://github.com/VebjornNyvoll/foundry-cpr-rollboards/blob/main/README.md",
   "license": "LICENSE"
