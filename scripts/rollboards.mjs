@@ -39,6 +39,7 @@ import {
   readRecipes,
   upsertRecipe,
   getRecipe,
+  deleteRecipe,
   recipeFromTable,
   makeStep,
   countSteps,
@@ -108,6 +109,7 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
       rollAll: RollboardDashboard.#onRollAll,
       closeInspector: RollboardDashboard.#onCloseInspector,
       openBoardsManager: RollboardDashboard.#onOpenBoardsManager,
+      openRecipeLibrary: RollboardDashboard.#onOpenRecipeLibrary,
       newBoard: RollboardDashboard.#onNewBoard,
       toggleDrawer: RollboardDashboard.#onToggleDrawer,
       clearDraws: RollboardDashboard.#onClearDraws
@@ -522,6 +524,11 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
   static async #onOpenBoardsManager(event) {
     event?.preventDefault?.();
     return this.#openBoardsManagerDialog();
+  }
+
+  static async #onOpenRecipeLibrary(event) {
+    event?.preventDefault?.();
+    return this.#openRecipeLibraryDialog();
   }
 
   static async #onNewBoard(event) {
@@ -1443,7 +1450,13 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
           icon: '<i class="fas fa-magic"></i>',
           label: L("samples.importButton"),
           callback: async () => {
-            await importSampleTables();
+            const info = await importSampleTables();
+            // Auto-place the Night Market recipe tile on the active board
+            // so the GM can see it immediately. Without this, the recipe is
+            // invisible — it lives in the recipe library which has no
+            // sidebar UI.
+            if (info?.recipeId) await self.#placeRecipeOnActiveBoard(info.recipeId, info.recipeName);
+            self.#openBoardsManagerDialog();
           }
         },
         close: {
@@ -1495,6 +1508,138 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
         });
       }
     }, { classes: ["foundry-cpr-rollboards", "dialog"], width: 480 }).render(true);
+  }
+
+  /* -------------------------------------------- */
+  /*  Recipe library                              */
+  /* -------------------------------------------- */
+
+  /**
+   * Place a tile referencing the given recipe on the active board, at a
+   * non-overlapping starting position. Notifies if there's no active board.
+   */
+  async #placeRecipeOnActiveBoard(recipeId, recipeName) {
+    const recipe = getRecipe(recipeId);
+    if (!recipe) {
+      ui.notifications.warn(L("missingRecipe"));
+      return false;
+    }
+    const board = this.#currentBoard();
+    if (!board) {
+      ui.notifications.warn(F("recipes.noActiveBoardForPlace", {
+        name: recipeName ?? recipe.name
+      }));
+      return false;
+    }
+    // Skip if the recipe already has a tile on this board.
+    if ((board.tiles ?? []).some((t) => t.recipeId === recipeId)) {
+      ui.notifications.info(F("recipes.alreadyOnBoard", {
+        name: recipeName ?? recipe.name,
+        board: board.name
+      }));
+      return false;
+    }
+    const { x, y } = this.#findOpenTilePosition(board);
+    board.tiles.push({ recipeId, x, y });
+    await upsertBoard(board);
+    ui.notifications.info(F("recipes.placedOnBoard", {
+      name: recipeName ?? recipe.name,
+      board: board.name
+    }));
+    this.render(false);
+    return true;
+  }
+
+  /** Find a position on the board not currently occupied by a tile. */
+  #findOpenTilePosition(board) {
+    const grid = TILE_SIZE + 16;
+    const taken = new Set((board.tiles ?? []).map((t) => `${Math.round(t.x / grid)},${Math.round(t.y / grid)}`));
+    // Scan a 10x10 grid starting near the top-left.
+    for (let row = 0; row < 10; row++) {
+      for (let col = 0; col < 10; col++) {
+        const key = `${col},${row}`;
+        if (!taken.has(key)) {
+          return { x: 32 + col * grid, y: 32 + row * grid };
+        }
+      }
+    }
+    return { x: 32, y: 32 };
+  }
+
+  async #openRecipeLibraryDialog() {
+    const recipes = Object.values(readRecipes())
+      .sort((a, b) => a.name.localeCompare(b.name));
+    if (!recipes.length) {
+      ui.notifications.info(L("recipes.empty"));
+      return;
+    }
+
+    const rows = recipes.map((r) => {
+      const stepCount = countSteps(r);
+      return `
+        <div class="fcr-recipe-row" data-recipe-id="${esc(r.id)}">
+          <span class="fcr-recipe-name">${esc(r.name)}</span>
+          <span class="fcr-recipe-steps">${stepCount} step${stepCount === 1 ? "" : "s"}</span>
+          <button type="button" class="fcr-recipe-place" title="${esc(L("recipes.place"))}">
+            <i class="fas fa-plus"></i> ${esc(L("recipes.place"))}
+          </button>
+          <button type="button" class="fcr-recipe-edit" title="${esc(L("recipes.edit"))}">
+            <i class="fas fa-pen"></i>
+          </button>
+          <button type="button" class="fcr-recipe-delete" title="${esc(L("recipes.delete"))}">
+            <i class="fas fa-trash"></i>
+          </button>
+        </div>`;
+    }).join("");
+
+    const content = `
+      <p class="fcr-dialog-hint">${esc(L("recipes.libraryHint"))}</p>
+      <div class="fcr-recipe-list">${rows}</div>`;
+
+    const self = this;
+    new Dialog({
+      title: L("recipes.libraryTitle"),
+      content,
+      buttons: {
+        close: { icon: '<i class="fas fa-check"></i>', label: L("close") }
+      },
+      default: "close",
+      render: (html) => {
+        const root = html instanceof jQuery ? html[0] : html;
+        root.querySelectorAll(".fcr-recipe-row").forEach((row) => {
+          const id = row.dataset.recipeId;
+          row.querySelector(".fcr-recipe-place").addEventListener("click", async () => {
+            const r = getRecipe(id);
+            if (!r) return;
+            await self.#placeRecipeOnActiveBoard(id, r.name);
+          });
+          row.querySelector(".fcr-recipe-edit").addEventListener("click", () => {
+            self.#editingRecipeId = id;
+            self.render(false);
+          });
+          row.querySelector(".fcr-recipe-delete").addEventListener("click", async () => {
+            const r = getRecipe(id);
+            if (!r) return;
+            const ok = await Dialog.confirm({
+              title: L("recipes.delete"),
+              content: `<p>${esc(F("recipes.deletePrompt", { name: r.name }))}</p>`,
+              rejectClose: false
+            });
+            if (!ok) return;
+            await deleteRecipe(id);
+            // Also remove any tiles referencing this recipe from all boards.
+            const allBoards = Object.values(readBoards());
+            for (const b of allBoards) {
+              const before = b.tiles?.length ?? 0;
+              b.tiles = (b.tiles ?? []).filter((t) => t.recipeId !== id);
+              if ((b.tiles?.length ?? 0) !== before) await upsertBoard(b);
+            }
+            row.remove();
+            self.render(false);
+          });
+        });
+      }
+    }, { classes: ["foundry-cpr-rollboards", "dialog"], width: 540 }).render(true);
   }
 
   /* -------------------------------------------- */

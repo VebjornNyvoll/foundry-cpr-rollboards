@@ -450,12 +450,12 @@ async function buildNightMarketRecipe(uuidByName) {
 
 /**
  * Public entry point. Imports all sample tables and builds the Night
- * Market recipe.
+ * Market recipe. Returns { tablesCreated, recipeCreated, recipeId, recipeName }.
  */
 export async function importSampleTables() {
   if (!game.user?.isGM) {
     ui.notifications.warn(game.i18n.localize(`${I18N_NS}.gmOnly`));
-    return { tablesCreated: 0, recipeCreated: false };
+    return { tablesCreated: 0, recipeCreated: false, recipeId: null, recipeName: null };
   }
 
   let tableInfo;
@@ -464,15 +464,27 @@ export async function importSampleTables() {
   } catch (err) {
     console.error(`${MODULE_ID} | importTables failed`, err);
     ui.notifications.error(game.i18n.localize(`${I18N_NS}.samples.failed`));
-    return { tablesCreated: 0, recipeCreated: false };
+    return { tablesCreated: 0, recipeCreated: false, recipeId: null, recipeName: null };
   }
 
-  let recipeInfo;
+  let recipeInfo = { skipped: true };
   try {
     recipeInfo = await buildNightMarketRecipe(tableInfo.uuidByName);
   } catch (err) {
     console.error(`${MODULE_ID} | buildNightMarketRecipe failed`, err);
-    recipeInfo = { skipped: true };
+  }
+
+  // Resolve the recipe id even on the skipped path (so the caller can
+  // place an existing recipe's tile on a board).
+  let recipeId = recipeInfo.recipeId ?? null;
+  let recipeName = recipeInfo.recipeName ?? null;
+  if (!recipeId) {
+    const existing = Object.values(readRecipes())
+      .find((r) => r?.name === NIGHT_MARKET_RECIPE_NAME);
+    if (existing) {
+      recipeId = existing.id;
+      recipeName = existing.name;
+    }
   }
 
   const tablesCreated = tableInfo.createdCount;
@@ -488,5 +500,5 @@ export async function importSampleTables() {
   } else {
     ui.notifications.info(game.i18n.localize(`${I18N_NS}.samples.allPresent`));
   }
-  return { tablesCreated, recipeCreated };
+  return { tablesCreated, recipeCreated, recipeId, recipeName };
 }

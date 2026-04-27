@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.1 — Recipe library is browsable; sample import auto-places the Night Market tile
+
+The 0.3.0 sample import created the Night Market generator recipe but it was invisible — recipes live in a world setting that had no UI to browse, so the GM never saw the master tile.
+
+- **`Recipes…` toolbar button** opens the recipe library dialog. Lists every recipe (name + step count) with three per-row buttons:
+  - **Place on board** — drops a tile for that recipe onto the active board (refuses if already present, refuses if no active board with a clear message).
+  - **Open in editor** — jumps straight into the recipe editor.
+  - **Delete** — removes the recipe AND every tile referencing it on every board (with confirm).
+- **Sample import auto-places the Night Market tile** on the active board if there is one, finding a non-overlapping starting position. If no board exists, it tells you to make one first.
+- New `findOpenTilePosition` helper scans a 10×10 grid and lands on the first empty cell so auto-placed tiles don't sit on top of each other.
+
 ## 0.3.0 — Switch steps · unique rolls · random count formulas · Night Market generator
 
 Engine extension to express the Cyberpunk RED Night Market generator (corebook pp. 337-339) as a single fully-automated recipe. New step concepts:
