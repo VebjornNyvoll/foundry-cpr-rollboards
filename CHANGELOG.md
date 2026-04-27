@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2 — Restore scene-controls opener; v13-compatible sidebar hook
+
+The 0.2.0 refactor removed the d20 button from the Scene Controls layer, leaving only the Roll Tables sidebar header button as an opener. In Foundry v13 the sidebar was rewritten as ApplicationV2 components and the old `renderRollTableDirectory` hook may not fire — so a v13 GM ended up with the module loaded but no UI affordance to open it.
+
+- **Restored the scene-controls d20 button.** Always-on opener; works on v12 and v13. Handler accepts both the v12 array-of-records shape and the v13 object-keyed-by-name shape for the `controls` argument.
+- **Sidebar opener now binds to both `renderRollTableDirectory` (v12) and `renderRollTables` (v13)** so it fires regardless of which Foundry version is in use.
+- Header-element search broadened to also accept `header` (newer sidebar markup) as a fallback.
+
 ## 0.2.1 — Fix release workflow: strip "v" prefix from version
 
 Every release before this (0.1.0, 0.1.1, 0.2.0) shipped a `module.json` with `"version": "vX.Y.Z"` because the GitHub Actions workflow substituted the git tag name verbatim. Foundry's manifest validator rejects non-semver version strings, so the module installed but didn't appear in the module list — silent failure.

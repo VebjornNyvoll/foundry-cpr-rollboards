@@ -62,16 +62,65 @@ Hooks.once("init", () => {
 });
 
 /**
- * Header button on the Roll Tables sidebar directory — the natural home for
- * a roll-table tool. The GM opens the dashboard from there.
+ * Scene-controls opener — the always-on, Foundry-version-stable entry point.
+ * Adds a d20 button to the token controls layer (visible to the GM only).
+ *
+ * v13 changed the shape of the `controls` argument: instead of an array of
+ * { name, tools: [...] } records, it's an object keyed by control name with
+ * `tools` itself a keyed object. This handler accepts both shapes.
  */
-Hooks.on("renderRollTableDirectory", (app, html) => {
+Hooks.on("getSceneControlButtons", (controls) => {
+  if (!game.user?.isGM) return;
+
+  const tool = {
+    name: "cpr-rollboards",
+    title: `${I18N_NS}.openDashboard`,
+    icon: "fas fa-dice-d20",
+    button: true,
+    visible: true,
+    onClick: () => openDashboard(),
+    onChange: () => openDashboard()
+  };
+
+  // v12: controls is Array<{name, tools: Array<...>}>
+  if (Array.isArray(controls)) {
+    const tokenControls = controls.find((c) => c.name === "token");
+    if (!tokenControls) return;
+    if (Array.isArray(tokenControls.tools)) {
+      tokenControls.tools.push(tool);
+    } else if (tokenControls.tools && typeof tokenControls.tools === "object") {
+      tokenControls.tools[tool.name] = tool;
+    }
+    return;
+  }
+
+  // v13+: controls is { [name]: {tools: {[name]: tool}} }
+  if (controls && typeof controls === "object") {
+    const tokenControls = controls.tokens || controls.token;
+    if (!tokenControls) return;
+    if (Array.isArray(tokenControls.tools)) {
+      tokenControls.tools.push(tool);
+    } else if (tokenControls.tools && typeof tokenControls.tools === "object") {
+      tokenControls.tools[tool.name] = tool;
+    }
+  }
+});
+
+/**
+ * Sidebar header button on the Roll Tables directory — convenience opener
+ * when the GM is already in the sidebar. v13 renamed the underlying class
+ * but the legacy hook name still fires for module compatibility; we cover
+ * both spellings here.
+ */
+function injectSidebarOpener(html) {
   if (!game.user?.isGM) return;
   const root = html instanceof jQuery ? html[0] : html;
   if (!root) return;
   if (root.querySelector(`.${MODULE_ID}-open-btn`)) return;
 
-  const header = root.querySelector(".directory-header .header-actions") || root.querySelector(".directory-header");
+  const header = root.querySelector(".directory-header .header-actions")
+    || root.querySelector(".directory-header")
+    || root.querySelector("header");
   if (!header) return;
 
   const btn = document.createElement("button");
@@ -80,4 +129,8 @@ Hooks.on("renderRollTableDirectory", (app, html) => {
   btn.innerHTML = `<i class="fas fa-dice-d20"></i> ${game.i18n.localize(`${I18N_NS}.openDashboard`)}`;
   btn.addEventListener("click", () => openDashboard());
   header.appendChild(btn);
-});
+}
+
+Hooks.on("renderRollTableDirectory", (app, html) => injectSidebarOpener(html));
+// v13 ApplicationV2 sidebar — fires alongside or instead of the V1 hook.
+Hooks.on("renderRollTables", (app, html) => injectSidebarOpener(html));
