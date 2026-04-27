@@ -119,12 +119,32 @@
   cursor: not-allowed;
 }
 
+.foundry-cpr-rollboards .fcr-btn-primary {
+  background: rgba(255, 100, 0, 0.18);
+  border-color: var(--color-text-hyperlink, #ff6400);
+  color: var(--color-text-hyperlink, #ff6400);
+}
+
+.foundry-cpr-rollboards .fcr-btn-primary:hover:not(:disabled) {
+  background: rgba(255, 100, 0, 0.32);
+}
+
+/* Main row (canvas + inspector) -------------------------------------- */
+
+.foundry-cpr-rollboards .fcr-main {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: row;
+  min-height: 0;
+}
+
 /* Canvas -------------------------------------------------------------- */
 
 .foundry-cpr-rollboards .fcr-canvas-scroll {
   flex: 1 1 auto;
   overflow: auto;
   position: relative;
+  min-width: 0;
 }
 
 .foundry-cpr-rollboards .fcr-canvas {
@@ -232,7 +252,8 @@
   justify-content: center;
 }
 
-.foundry-cpr-rollboards .fcr-tile:hover .fcr-tile-delete {
+.foundry-cpr-rollboards .fcr-tile:hover .fcr-tile-delete,
+.foundry-cpr-rollboards .fcr-tile:hover .fcr-tile-edit {
   opacity: 1;
 }
 
@@ -240,9 +261,336 @@
   background: #c44;
 }
 
+.foundry-cpr-rollboards .fcr-tile-edit {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid #555;
+  border-radius: 50%;
+  background: #333;
+  color: #ccc;
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s ease, background 0.1s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.foundry-cpr-rollboards .fcr-tile-edit:hover {
+  background: var(--color-text-hyperlink, #ff6400);
+  color: #fff;
+}
+
+.foundry-cpr-rollboards .fcr-tile-badge {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: rgba(255, 100, 0, 0.85);
+  color: #fff;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+  font-weight: 600;
+}
+
+.foundry-cpr-rollboards .fcr-tile.fcr-tile-editing .fcr-tile-icon {
+  outline: 2px solid var(--color-text-hyperlink, #ff6400);
+  outline-offset: 2px;
+}
+
+.foundry-cpr-rollboards .fcr-tile.fcr-tile-droptarget .fcr-tile-icon {
+  box-shadow: 0 0 0 3px rgba(255, 100, 0, 0.6), 0 0 12px rgba(255, 100, 0, 0.4);
+}
+
 .foundry-cpr-rollboards .fcr-tile.fcr-missing .fcr-tile-icon {
   filter: grayscale(1) brightness(0.5);
   border-color: #933;
+}
+
+/* Inspector ----------------------------------------------------------- */
+
+.foundry-cpr-rollboards .fcr-inspector {
+  flex: 0 0 340px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--color-border-light-primary, #444);
+  background: rgba(0, 0, 0, 0.42);
+  min-height: 0;
+}
+
+.foundry-cpr-rollboards .fcr-inspector-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--color-border-light-primary, #444);
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.foundry-cpr-rollboards .fcr-inspector-name {
+  flex: 1 1 auto;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--color-border-light-tertiary, #666);
+  border-radius: 3px;
+  color: var(--color-text-light-primary, #eee);
+  padding: 3px 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.foundry-cpr-rollboards .fcr-inspector-name:focus {
+  border-color: var(--color-text-hyperlink, #ff6400);
+  outline: none;
+}
+
+.foundry-cpr-rollboards .fcr-inspector-close {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--color-text-light-primary, #ccc);
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 2px 6px;
+}
+
+.foundry-cpr-rollboards .fcr-inspector-close:hover {
+  background: rgba(200, 30, 30, 0.25);
+  color: #fff;
+}
+
+.foundry-cpr-rollboards .fcr-inspector-hint {
+  margin: 6px 8px 0 8px;
+  font-size: 11px;
+  color: var(--color-text-light-secondary, #aaa);
+  font-style: italic;
+}
+
+.foundry-cpr-rollboards .fcr-inspector-tree {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 6px 8px;
+}
+
+.foundry-cpr-rollboards .fcr-inspector-footer {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 6px 8px;
+  font-size: 11px;
+  color: var(--color-text-light-secondary, #aaa);
+}
+
+.foundry-cpr-rollboards .fcr-inspector-foot-hint {
+  font-style: italic;
+}
+
+/* Step row inside the inspector tree */
+.foundry-cpr-rollboards .fcr-step {
+  margin: 3px 0;
+}
+
+.foundry-cpr-rollboards .fcr-step-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto auto auto auto auto;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 11px;
+}
+
+.foundry-cpr-rollboards .fcr-step-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.foundry-cpr-rollboards .fcr-step-row.fcr-step-drop-target {
+  border-color: var(--color-text-hyperlink, #ff6400);
+  background: rgba(255, 100, 0, 0.18);
+}
+
+.foundry-cpr-rollboards .fcr-step-handle {
+  cursor: grab;
+  color: var(--color-text-light-secondary, #aaa);
+  user-select: none;
+  padding: 0 2px;
+}
+
+.foundry-cpr-rollboards .fcr-step-handle:active {
+  cursor: grabbing;
+}
+
+.foundry-cpr-rollboards .fcr-step-label {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--color-border-light-tertiary, #666);
+  border-radius: 3px;
+  color: var(--color-text-light-primary, #eee);
+  padding: 2px 4px;
+  font-size: 11px;
+  min-width: 0;
+  width: 100%;
+}
+
+.foundry-cpr-rollboards .fcr-step-label:focus {
+  border-color: var(--color-text-hyperlink, #ff6400);
+  outline: none;
+}
+
+.foundry-cpr-rollboards .fcr-step-label.fcr-step-missing {
+  border-color: #933;
+  color: #c66;
+}
+
+.foundry-cpr-rollboards .fcr-step-count,
+.foundry-cpr-rollboards .fcr-step-chance {
+  width: 42px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--color-border-light-tertiary, #666);
+  border-radius: 3px;
+  color: var(--color-text-light-primary, #eee);
+  padding: 2px 4px;
+  font-size: 11px;
+  text-align: right;
+}
+
+.foundry-cpr-rollboards .fcr-step-count:focus,
+.foundry-cpr-rollboards .fcr-step-chance:focus {
+  border-color: var(--color-text-hyperlink, #ff6400);
+  outline: none;
+}
+
+.foundry-cpr-rollboards .fcr-step-flags {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.foundry-cpr-rollboards .fcr-step-flag {
+  background: transparent;
+  border: 1px solid var(--color-border-light-tertiary, #666);
+  border-radius: 3px;
+  color: var(--color-text-light-secondary, #aaa);
+  cursor: pointer;
+  padding: 1px 5px;
+  font-size: 10px;
+  user-select: none;
+}
+
+.foundry-cpr-rollboards .fcr-step-flag.fcr-step-flag-on {
+  background: rgba(255, 100, 0, 0.22);
+  border-color: var(--color-text-hyperlink, #ff6400);
+  color: var(--color-text-hyperlink, #ff6400);
+}
+
+.foundry-cpr-rollboards .fcr-step-delete {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--color-text-light-secondary, #aaa);
+  cursor: pointer;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+.foundry-cpr-rollboards .fcr-step-delete:hover {
+  background: rgba(200, 30, 30, 0.25);
+  color: #f88;
+}
+
+.foundry-cpr-rollboards .fcr-step-table {
+  font-size: 10px;
+  color: var(--color-text-light-secondary, #888);
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 110px;
+}
+
+.foundry-cpr-rollboards .fcr-step-children {
+  margin-left: 16px;
+  border-left: 1px dashed rgba(255, 255, 255, 0.12);
+  padding-left: 6px;
+}
+
+.foundry-cpr-rollboards .fcr-step.fcr-step-dragging {
+  opacity: 0.4;
+}
+
+/* Popup (right-click on tile) ---------------------------------------- */
+
+.foundry-cpr-rollboards .fcr-popup {
+  position: absolute;
+  z-index: 60;
+  background: var(--color-bg, #201f1e);
+  border: 1px solid var(--color-text-hyperlink, #ff6400);
+  border-radius: 4px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+  padding: 6px 8px;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-text-light-primary, #eee);
+}
+
+.foundry-cpr-rollboards .fcr-popup-title {
+  font-weight: 600;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 3px;
+}
+
+.foundry-cpr-rollboards .fcr-popup-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.foundry-cpr-rollboards .fcr-popup-row > label {
+  font-size: 11px;
+  color: var(--color-text-light-secondary, #aaa);
+}
+
+.foundry-cpr-rollboards .fcr-popup input[type="number"] {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--color-border-light-tertiary, #666);
+  border-radius: 3px;
+  color: var(--color-text-light-primary, #eee);
+  padding: 2px 4px;
+  font-size: 12px;
+  text-align: right;
+}
+
+.foundry-cpr-rollboards .fcr-popup input[type="number"]:focus {
+  border-color: var(--color-text-hyperlink, #ff6400);
+  outline: none;
+}
+
+.foundry-cpr-rollboards .fcr-popup-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.foundry-cpr-rollboards .fcr-popup-actions .fcr-btn {
+  flex: 1 1 auto;
+  justify-content: center;
 }
 
 /* Drawer -------------------------------------------------------------- */

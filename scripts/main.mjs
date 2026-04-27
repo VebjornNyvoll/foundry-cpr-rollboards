@@ -26,6 +26,13 @@ function openDashboard() {
   _dashboardApp.render(true);
 }
 
+function rollAllShortcut() {
+  if (!game.user?.isGM) return false;
+  if (!_dashboardApp?.rendered) return false;
+  _dashboardApp.rollAllOnActiveTab();
+  return true;
+}
+
 Hooks.once("init", () => {
   // Which scenes get a tab on the dashboard.
   game.settings.register(MODULE_ID, SETTING_SELECTED_SCENES, {
@@ -53,6 +60,17 @@ Hooks.once("init", () => {
 
   // Public API for macros / dev tools.
   game.modules.get(MODULE_ID).api = { open: openDashboard };
+
+  // Ctrl+Enter while the dashboard is open → roll every tile on the active tab.
+  game.keybindings.register(MODULE_ID, "rollAll", {
+    name: `${I18N_NS}.keybind.rollAll`,
+    editable: [
+      { key: "Enter", modifiers: ["Control"] }
+    ],
+    onDown: () => rollAllShortcut(),
+    restricted: true,
+    precedence: foundry.CONST?.KEYBINDING_PRECEDENCE?.NORMAL ?? CONST.KEYBINDING_PRECEDENCE.NORMAL
+  });
 });
 
 /**

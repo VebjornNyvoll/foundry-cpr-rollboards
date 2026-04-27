@@ -72,6 +72,35 @@
     "card.toChat": "Send everything to chat",
     "result.toChat": "Send to chat",
     "result.skipped": "(skipped — chance roll missed)",
-    "result.empty": "(no result)"
+    "result.empty": "(no result)",
+
+    "rollAllButton": "Roll all",
+    "rollAllTooltip": "Roll every tile on the current tab. Keybind: Ctrl+Enter while the dashboard is open.",
+    "rollAllNothing": "No tiles to roll on this tab.",
+    "keybind.rollAll": "Roll all tiles on the current tab",
+
+    "editRecipe": "Edit recipe",
+    "recipeName": "Recipe name",
+    "inspectorTitle": "Recipe inspector",
+    "inspectorHint": "Drop a roll table from the sidebar onto a step row to add it as a child step. Drop on the canvas or onto a tile body to add it as a sibling root step.",
+    "inspectorRootHint": "Drop more roll tables on this tile to chain root steps. Drop on a step row above to nest.",
+
+    "step.label": "Step label",
+    "step.count": "Count",
+    "step.countPrompt": "Prompt for count at roll time",
+    "step.optional": "Optional",
+    "step.optionalTooltip": "Mark as optional — currently a hint for the GM; honoured by future per-tile toggles.",
+    "step.chance": "Chance %",
+    "step.chanceTooltip": "Probability this step fires per parent result (1–100).",
+    "step.delete": "Delete this step",
+    "step.deleteConfirm": "Delete step \"{name}\" and all its children?",
+    "step.missingTable": "(table missing)",
+    "step.promptLabel": "How many?",
+    "step.promptTitle": "Roll count for {label}",
+
+    "popup.editInInspector": "Open inspector",
+    "popup.delete": "Delete tile",
+    "popup.deleteConfirm": "Delete tile \"{name}\" from this tab? The recipe stays in the library.",
+    "popup.title": "Quick edit"
   }
 }

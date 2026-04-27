@@ -102,6 +102,112 @@ export async function deleteRecipe(id) {
   return true;
 }
 
+/* ---------- tree utilities (mutate in place; caller persists) ---------- */
+
+/** Total number of steps in the tree (root + descendants), or 0. */
+export function countSteps(recipe) {
+  if (!recipe?.steps?.length) return 0;
+  let n = 0;
+  const walk = (steps) => {
+    for (const s of steps) {
+      n++;
+      if (s.children?.length) walk(s.children);
+    }
+  };
+  walk(recipe.steps);
+  return n;
+}
+
+/** Locate a step by id anywhere in the recipe tree. Returns null if missing. */
+export function findStep(recipe, stepId) {
+  if (!recipe?.steps || !stepId) return null;
+  const stack = [...recipe.steps];
+  while (stack.length) {
+    const s = stack.pop();
+    if (s.id === stepId) return s;
+    if (s.children?.length) stack.push(...s.children);
+  }
+  return null;
+}
+
+/**
+ * Find the array containing a step plus its index in that array. Returns
+ * { list, index, parent } where `parent` is the parent step (or null for
+ * root). `null` if the step doesn't exist.
+ */
+export function findStepLocation(recipe, stepId) {
+  if (!recipe?.steps || !stepId) return null;
+  if (recipe.steps.some((s, i) => s.id === stepId)) {
+    const i = recipe.steps.findIndex((s) => s.id === stepId);
+    return { list: recipe.steps, index: i, parent: null };
+  }
+  const stack = [...recipe.steps];
+  while (stack.length) {
+    const s = stack.pop();
+    if (!s.children) continue;
+    const idx = s.children.findIndex((c) => c.id === stepId);
+    if (idx >= 0) return { list: s.children, index: idx, parent: s };
+    stack.push(...s.children);
+  }
+  return null;
+}
+
+/** Remove a step (and its subtree) from the recipe in place. Returns it or null. */
+export function removeStep(recipe, stepId) {
+  const loc = findStepLocation(recipe, stepId);
+  if (!loc) return null;
+  return loc.list.splice(loc.index, 1)[0] ?? null;
+}
+
+/**
+ * Add a step to a recipe. If parentStepId is null/undefined, append to the
+ * root step list; otherwise append to that parent's children.
+ */
+export function addStep(recipe, parentStepId, step) {
+  if (!parentStepId) {
+    if (!Array.isArray(recipe.steps)) recipe.steps = [];
+    recipe.steps.push(step);
+    return step;
+  }
+  const parent = findStep(recipe, parentStepId);
+  if (!parent) return null;
+  if (!Array.isArray(parent.children)) parent.children = [];
+  parent.children.push(step);
+  return step;
+}
+
+/** Move an existing step under a new parent (or root if newParentId is null). */
+export function moveStep(recipe, stepId, newParentId, newIndex) {
+  if (stepId === newParentId) return false;
+  // Refuse to move a step under one of its own descendants — that would orphan the tree.
+  if (newParentId && isDescendant(recipe, stepId, newParentId)) return false;
+  const removed = removeStep(recipe, stepId);
+  if (!removed) return false;
+  const targetList = newParentId ? findStep(recipe, newParentId)?.children : recipe.steps;
+  if (!targetList) {
+    // Restore — move target vanished.
+    recipe.steps.push(removed);
+    return false;
+  }
+  const idx = (typeof newIndex === "number" && newIndex >= 0 && newIndex <= targetList.length)
+    ? newIndex
+    : targetList.length;
+  targetList.splice(idx, 0, removed);
+  return true;
+}
+
+function isDescendant(recipe, ancestorId, candidateId) {
+  const ancestor = findStep(recipe, ancestorId);
+  if (!ancestor) return false;
+  const stack = [...(ancestor.children ?? [])];
+  while (stack.length) {
+    const s = stack.pop();
+    if (s.id === candidateId) return true;
+    if (s.children?.length) stack.push(...s.children);
+  }
+  return false;
+}
+
 /* ---------- utilities ---------- */
 
 function clamp(n, lo, hi) {

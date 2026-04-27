@@ -36,6 +36,13 @@ import {
   upsertRecipe,
   getRecipe,
   recipeFromTable,
+  makeStep,
+  countSteps,
+  findStep,
+  findStepLocation,
+  addStep,
+  removeStep,
+  moveStep,
   DEFAULT_TILE_ICON
 } from "./recipes.mjs";
 
@@ -95,6 +102,12 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
   /** @type {Array<object>} card history, newest first, capped at MAX_DRAW_HISTORY */
   #draws = [];
 
+  /** @type {string|null} recipe id currently shown in the inspector */
+  #editingRecipeId = null;
+
+  /** @type {HTMLElement|null} active right-click popup, if any */
+  #popupEl = null;
+
   static DEFAULT_OPTIONS = {
     id: "foundry-cpr-rollboards-app",
     classes: ["foundry-cpr-rollboards"],
@@ -104,12 +117,15 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
       icon: "fas fa-dice-d20",
       resizable: true
     },
-    position: { width: 960, height: 720 },
+    position: { width: 1100, height: 760 },
     actions: {
       selectTab: RollboardDashboard.#onSelectTab,
       toggleNames: RollboardDashboard.#onToggleNames,
       rollTile: RollboardDashboard.#onRollTile,
+      editTile: RollboardDashboard.#onEditTile,
       deleteTile: RollboardDashboard.#onDeleteTile,
+      rollAll: RollboardDashboard.#onRollAll,
+      closeInspector: RollboardDashboard.#onCloseInspector,
       openSceneSelector: RollboardDashboard.#onOpenSceneSelector,
       savePreset: RollboardDashboard.#onSavePreset,
       importPreset: RollboardDashboard.#onImportPreset,
@@ -148,15 +164,32 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
 
     const tiles = data.tiles.map((t) => {
       const recipe = recipes[t.recipeId];
+      const stepCount = recipe ? countSteps(recipe) : 0;
       return {
         recipeId: t.recipeId,
         x: Number.isFinite(t.x) ? Math.max(0, t.x) : 0,
         y: Number.isFinite(t.y) ? Math.max(0, t.y) : 0,
         name: recipe?.name ?? L("missingRecipe"),
         img: recipe?.icon ?? DEFAULT_TILE_ICON,
-        missing: !recipe
+        missing: !recipe,
+        stepCount: stepCount > 1 ? stepCount : 0,
+        stepCountTooltip: stepCount > 1 ? `${stepCount} steps` : "",
+        editing: !!recipe && recipe.id === this.#editingRecipeId
       };
     });
+
+    // Drop the editing id if its recipe vanished or its tile was removed.
+    let inspectorOpen = false;
+    let editingRecipeName = "";
+    if (this.#editingRecipeId) {
+      const editing = recipes[this.#editingRecipeId];
+      if (editing) {
+        inspectorOpen = true;
+        editingRecipeName = editing.name ?? "";
+      } else {
+        this.#editingRecipeId = null;
+      }
+    }
 
     return {
       moduleId: MODULE_ID,
@@ -175,6 +208,10 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
       canActSave: !!activeScene && data.tiles.length > 0,
       canActImport: !!activeScene && presetCount > 0,
       canManagePresets: presetCount > 0,
+      canRollAll: !!activeScene && data.tiles.length > 0,
+      inspectorOpen,
+      editingRecipeId: this.#editingRecipeId ?? "",
+      editingRecipeName,
       drawerOpen: this.#drawerOpen,
       drawCount: this.#draws.length
     };
@@ -201,11 +238,15 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
 
     // Render draw cards into the drawer (manual DOM — too dynamic for hbs).
     if (this.#drawerOpen) this.#renderCards();
+
+    // Render and wire the inspector tree if it's open.
+    if (this.#editingRecipeId) this.#renderInspector();
   }
 
   _onClose(options) {
     this.#resizeObserver?.disconnect();
     this.#resizeObserver = null;
+    this.#dismissPopup();
     super._onClose?.(options);
   }
 
@@ -229,9 +270,31 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
     canvas.addEventListener("dragover", (event) => {
       event.preventDefault();
       event.dataTransfer.dropEffect = "copy";
+      // Highlight any tile currently under the cursor so the GM sees that
+      // dropping there appends a step instead of creating a new tile.
+      const tile = event.target.closest(".fcr-tile");
+      const previous = canvas.querySelector(".fcr-tile.fcr-tile-droptarget");
+      if (previous && previous !== tile) previous.classList.remove("fcr-tile-droptarget");
+      if (tile) tile.classList.add("fcr-tile-droptarget");
     });
 
-    canvas.addEventListener("drop", (event) => this.#onCanvasDrop(event, canvas));
+    canvas.addEventListener("dragleave", (event) => {
+      // The dragleave fires per-element, so re-check whether the pointer is
+      // still over a child of the canvas. relatedTarget can be null when the
+      // cursor exits the window entirely.
+      if (!event.relatedTarget || !canvas.contains(event.relatedTarget)) {
+        canvas.querySelectorAll(".fcr-tile.fcr-tile-droptarget")
+          .forEach((el) => el.classList.remove("fcr-tile-droptarget"));
+      }
+    });
+
+    canvas.addEventListener("drop", (event) => {
+      canvas.querySelectorAll(".fcr-tile.fcr-tile-droptarget")
+        .forEach((el) => el.classList.remove("fcr-tile-droptarget"));
+      this.#onCanvasDrop(event, canvas);
+    });
+
+    canvas.addEventListener("contextmenu", (event) => this.#onTileContextMenu(event, canvas));
 
     for (const tile of canvas.querySelectorAll(".fcr-tile")) {
       this.#bindTileDrag(tile, canvas);
@@ -277,7 +340,25 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
     const scene = this.#currentScene();
     if (!scene) return;
 
-    // Build a single-step recipe from the dropped table and persist it.
+    // If the drop lands on an existing tile, append a step to that recipe
+    // instead of creating a brand-new tile. This is how you build chains
+    // by dragging tables together.
+    const targetTile = event.target.closest(".fcr-tile");
+    if (targetTile) {
+      const recipeId = targetTile.dataset.recipeId;
+      const recipe = getRecipe(recipeId);
+      if (recipe) {
+        addStep(recipe, null, makeStep({ tableUuid: table.uuid, label: table.name }));
+        await upsertRecipe(recipe);
+        // Open the inspector so the GM can see the new step land in the tree.
+        this.#editingRecipeId = recipe.id;
+        this.render(false);
+        return;
+      }
+    }
+
+    // Default: build a single-step recipe from the dropped table and place a
+    // new tile at the drop point.
     const recipe = recipeFromTable(table);
     await upsertRecipe(recipe);
 
@@ -396,9 +477,14 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
       return;
     }
 
+    const counts = await this.#collectPromptCounts(recipe);
+    if (counts === false) return; // user cancelled the prompt dialog
+
     let card;
     try {
-      card = await rollRecipe(recipe);
+      card = await rollRecipe(recipe, {
+        countOverride: (step) => counts?.[step.id]
+      });
     } catch (err) {
       console.error(`${MODULE_ID} | rollRecipe failed`, err);
       ui.notifications.error(L("rollFailed"));
@@ -411,6 +497,61 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
     }
     if (!this.#drawerOpen) this.#drawerOpen = true;
     this.render(false);
+  }
+
+  /**
+   * Collect counts for all prompt-mode steps in a recipe via a single dialog.
+   * Returns:
+   *   - null if there are no prompt-mode steps,
+   *   - { [stepId]: count } if the GM accepted,
+   *   - false if the GM cancelled (caller should abort the roll).
+   */
+  async #collectPromptCounts(recipe) {
+    const prompts = [];
+    const walk = (steps) => {
+      for (const s of steps ?? []) {
+        if (s.countMode === "prompt") prompts.push(s);
+        if (s.children?.length) walk(s.children);
+      }
+    };
+    walk(recipe.steps);
+    if (!prompts.length) return null;
+
+    const rows = prompts.map((s) => `
+      <div class="fcr-dialog-form">
+        <label>${esc(F("step.promptTitle", { label: s.label || L("step.missingTable") }))}</label>
+        <input type="number" name="${esc(s.id)}" min="1" value="${esc(String(s.count ?? 1))}" autofocus />
+      </div>
+    `).join("<hr />");
+
+    return new Promise((resolve) => {
+      new Dialog({
+        title: L("step.promptLabel"),
+        content: rows,
+        buttons: {
+          ok: {
+            icon: '<i class="fas fa-check"></i>',
+            label: L("save"),
+            callback: (html) => {
+              const root = html instanceof jQuery ? html[0] : html;
+              const out = {};
+              for (const s of prompts) {
+                const v = Number(root.querySelector(`input[name="${s.id}"]`)?.value);
+                out[s.id] = (Number.isFinite(v) && v > 0) ? Math.max(1, Math.floor(v)) : (s.count ?? 1);
+              }
+              resolve(out);
+            }
+          },
+          cancel: {
+            icon: '<i class="fas fa-times"></i>',
+            label: L("cancel"),
+            callback: () => resolve(false)
+          }
+        },
+        default: "ok",
+        close: () => resolve(false)
+      }, { classes: ["foundry-cpr-rollboards", "dialog"] }).render(true);
+    });
   }
 
   static async #onDeleteTile(event, target) {
@@ -443,6 +584,410 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
     if (!ok) return;
     this.#draws = [];
     this.render(false);
+  }
+
+  static async #onEditTile(event, target) {
+    event.preventDefault();
+    event.stopPropagation();
+    const recipeId = target.dataset.recipeId;
+    if (!recipeId) return;
+    if (!getRecipe(recipeId)) {
+      ui.notifications.warn(L("missingRecipe"));
+      return;
+    }
+    this.#editingRecipeId = recipeId;
+    this.render(false);
+  }
+
+  static async #onCloseInspector(event) {
+    event?.preventDefault?.();
+    this.#editingRecipeId = null;
+    this.render(false);
+  }
+
+  static async #onRollAll(event) {
+    event?.preventDefault?.();
+    return this.rollAllOnActiveTab();
+  }
+
+  /**
+   * Public entry point for the keybind in main.mjs.
+   * Rolls every tile on the active tab in placement order.
+   */
+  async rollAllOnActiveTab() {
+    const scene = this.#currentScene();
+    if (!scene) {
+      ui.notifications.warn(L("noActiveTab"));
+      return;
+    }
+    const data = readData(scene);
+    if (!data.tiles.length) {
+      ui.notifications.warn(L("rollAllNothing"));
+      return;
+    }
+
+    // Roll in a stable order so the drawer reflects the layout sequence.
+    const ordered = [...data.tiles].sort((a, b) => (a.y - b.y) || (a.x - b.x));
+    let rolled = 0;
+    for (const tile of ordered) {
+      const recipe = getRecipe(tile.recipeId);
+      if (!recipe) continue;
+      const counts = await this.#collectPromptCounts(recipe);
+      if (counts === false) continue; // skip this tile if the GM cancelled
+      try {
+        const card = await rollRecipe(recipe, {
+          countOverride: (step) => counts?.[step.id]
+        });
+        this.#draws.unshift(card);
+        rolled++;
+      } catch (err) {
+        console.error(`${MODULE_ID} | rollAll: rollRecipe failed`, err);
+      }
+    }
+    if (this.#draws.length > MAX_DRAW_HISTORY) this.#draws.length = MAX_DRAW_HISTORY;
+    if (rolled > 0 && !this.#drawerOpen) this.#drawerOpen = true;
+    this.render(false);
+  }
+
+  /* -------------------------------------------- */
+  /*  Right-click popup                           */
+  /* -------------------------------------------- */
+
+  #onTileContextMenu(event, canvas) {
+    const tileEl = event.target.closest(".fcr-tile");
+    if (!tileEl) return; // right-clicking empty canvas does nothing yet
+    event.preventDefault();
+    event.stopPropagation();
+    const recipeId = tileEl.dataset.recipeId;
+    const recipe = getRecipe(recipeId);
+    if (!recipe) return;
+    this.#showPopup(event.clientX, event.clientY, recipe);
+  }
+
+  #showPopup(clientX, clientY, recipe) {
+    this.#dismissPopup();
+    const root = this.element;
+    if (!root) return;
+
+    const rootRect = root.getBoundingClientRect();
+    const x = clientX - rootRect.left;
+    const y = clientY - rootRect.top;
+
+    // Recipes with one root step show that step's count/chance/optional in
+    // the popup; chained recipes only get the "open inspector" affordance.
+    const onlyStep = (recipe.steps?.length === 1) ? recipe.steps[0] : null;
+
+    const el = document.createElement("div");
+    el.className = "fcr-popup";
+    el.style.left = `${Math.max(0, x)}px`;
+    el.style.top = `${Math.max(0, y)}px`;
+    el.dataset.recipeId = recipe.id;
+
+    const rows = [];
+    if (onlyStep) {
+      rows.push(`
+        <div class="fcr-popup-row">
+          <label for="fcr-popup-count">${esc(L("step.count"))}</label>
+          <input id="fcr-popup-count" type="number" min="1" value="${esc(String(onlyStep.count ?? 1))}" data-popup-field="count" />
+        </div>
+        <div class="fcr-popup-row">
+          <label for="fcr-popup-chance">${esc(L("step.chance"))}</label>
+          <input id="fcr-popup-chance" type="number" min="1" max="100" value="${esc(String(onlyStep.chance ?? 100))}" data-popup-field="chance" />
+        </div>`);
+    }
+
+    el.innerHTML = `
+      <div class="fcr-popup-title" title="${esc(recipe.name)}">${esc(recipe.name)}</div>
+      ${rows.join("")}
+      <div class="fcr-popup-actions">
+        <button type="button" class="fcr-btn" data-popup-action="inspector">
+          <i class="fas fa-pen"></i> ${esc(L("popup.editInInspector"))}
+        </button>
+        <button type="button" class="fcr-btn" data-popup-action="delete">
+          <i class="fas fa-times"></i> ${esc(L("popup.delete"))}
+        </button>
+      </div>`;
+    root.appendChild(el);
+    this.#popupEl = el;
+
+    // Inputs save on change.
+    el.addEventListener("change", async (ev) => {
+      const field = ev.target?.dataset?.popupField;
+      if (!field || !onlyStep) return;
+      const cur = getRecipe(recipe.id);
+      if (!cur || !cur.steps?.[0]) return;
+      const value = Number(ev.target.value);
+      if (!Number.isFinite(value)) return;
+      if (field === "count") cur.steps[0].count = Math.max(1, Math.floor(value));
+      if (field === "chance") cur.steps[0].chance = Math.max(1, Math.min(100, Math.floor(value)));
+      await upsertRecipe(cur);
+    });
+
+    // Action buttons.
+    el.addEventListener("click", async (ev) => {
+      const btn = ev.target.closest("[data-popup-action]");
+      if (!btn) return;
+      const action = btn.dataset.popupAction;
+      this.#dismissPopup();
+      if (action === "inspector") {
+        this.#editingRecipeId = recipe.id;
+        this.render(false);
+      } else if (action === "delete") {
+        const ok = await Dialog.confirm({
+          title: L("popup.delete"),
+          content: `<p>${esc(F("popup.deleteConfirm", { name: recipe.name }))}</p>`,
+          rejectClose: false
+        });
+        if (!ok) return;
+        const scene = this.#currentScene();
+        if (!scene) return;
+        const data = readData(scene);
+        data.tiles = data.tiles.filter((t) => t.recipeId !== recipe.id);
+        await writeData(scene, data);
+        this.render(false);
+      }
+    });
+
+    // Dismiss on click outside.
+    setTimeout(() => {
+      const onDocClick = (ev) => {
+        if (!el.contains(ev.target)) {
+          document.removeEventListener("mousedown", onDocClick);
+          this.#dismissPopup();
+        }
+      };
+      document.addEventListener("mousedown", onDocClick);
+    }, 0);
+  }
+
+  #dismissPopup() {
+    if (this.#popupEl?.parentNode) {
+      this.#popupEl.parentNode.removeChild(this.#popupEl);
+    }
+    this.#popupEl = null;
+  }
+
+  /* -------------------------------------------- */
+  /*  Inspector                                   */
+  /* -------------------------------------------- */
+
+  #renderInspector() {
+    const root = this.element;
+    if (!root) return;
+    const tree = root.querySelector(".fcr-inspector-tree");
+    if (!tree) return;
+    const recipe = getRecipe(this.#editingRecipeId);
+    if (!recipe) {
+      tree.innerHTML = "";
+      return;
+    }
+    tree.innerHTML = (recipe.steps ?? []).map((s) => this.#renderStepHTML(s, 0)).join("");
+    this.#bindInspector(tree, recipe);
+  }
+
+  #renderStepHTML(step, depth) {
+    const tableLabel = step.tableUuid ? esc(`uuid: ${step.tableUuid.split(".").pop()}`) : esc(L("step.missingTable"));
+    const childrenHTML = (step.children ?? []).map((c) => this.#renderStepHTML(c, depth + 1)).join("");
+    const optionalOn = !!step.optional;
+    const promptOn = step.countMode === "prompt";
+    return `
+      <div class="fcr-step" data-step-id="${esc(step.id)}" data-depth="${depth}">
+        <div class="fcr-step-row" draggable="true">
+          <span class="fcr-step-handle" title="Drag to move">⋮⋮</span>
+          <input type="text" class="fcr-step-label${step.tableUuid ? "" : " fcr-step-missing"}"
+                 value="${esc(step.label ?? "")}"
+                 placeholder="${esc(L("step.label"))}"
+                 data-step-field="label" />
+          <span class="fcr-step-table" title="${esc(step.tableUuid ?? "")}">${tableLabel}</span>
+          <input type="number" class="fcr-step-count" min="1"
+                 value="${esc(String(step.count ?? 1))}"
+                 title="${esc(L("step.count"))}"
+                 data-step-field="count" />
+          <span class="fcr-step-flags">
+            <button type="button"
+                    class="fcr-step-flag${promptOn ? " fcr-step-flag-on" : ""}"
+                    data-step-toggle="prompt"
+                    title="${esc(L("step.countPrompt"))}">?</button>
+            <button type="button"
+                    class="fcr-step-flag${optionalOn ? " fcr-step-flag-on" : ""}"
+                    data-step-toggle="optional"
+                    title="${esc(L("step.optionalTooltip"))}">opt</button>
+          </span>
+          <input type="number" class="fcr-step-chance" min="1" max="100"
+                 value="${esc(String(step.chance ?? 100))}"
+                 title="${esc(L("step.chanceTooltip"))}"
+                 data-step-field="chance" />
+          <button type="button" class="fcr-step-delete" data-step-action="delete"
+                  title="${esc(L("step.delete"))}"><i class="fas fa-times"></i></button>
+        </div>
+        ${childrenHTML
+          ? `<div class="fcr-step-children">${childrenHTML}</div>`
+          : ""}
+      </div>`;
+  }
+
+  #bindInspector(tree, recipe) {
+    // Inline edits — auto-save on change.
+    tree.addEventListener("change", async (event) => {
+      const field = event.target?.dataset?.stepField;
+      if (!field) return;
+      const stepEl = event.target.closest(".fcr-step");
+      const stepId = stepEl?.dataset?.stepId;
+      if (!stepId) return;
+      const cur = getRecipe(recipe.id);
+      const step = cur ? findStep(cur, stepId) : null;
+      if (!step) return;
+      if (field === "label") {
+        step.label = String(event.target.value ?? "").trim();
+      } else if (field === "count") {
+        step.count = Math.max(1, Math.floor(Number(event.target.value) || 1));
+        event.target.value = String(step.count);
+      } else if (field === "chance") {
+        step.chance = Math.max(1, Math.min(100, Math.floor(Number(event.target.value) || 100)));
+        event.target.value = String(step.chance);
+      }
+      await upsertRecipe(cur);
+    });
+
+    // Toggle buttons (prompt-mode, optional).
+    tree.addEventListener("click", async (event) => {
+      const toggleBtn = event.target.closest("[data-step-toggle]");
+      if (toggleBtn) {
+        event.preventDefault();
+        const stepEl = toggleBtn.closest(".fcr-step");
+        const stepId = stepEl?.dataset?.stepId;
+        if (!stepId) return;
+        const cur = getRecipe(recipe.id);
+        const step = cur ? findStep(cur, stepId) : null;
+        if (!step) return;
+        const which = toggleBtn.dataset.stepToggle;
+        if (which === "prompt") {
+          step.countMode = step.countMode === "prompt" ? "fixed" : "prompt";
+        } else if (which === "optional") {
+          step.optional = !step.optional;
+        }
+        await upsertRecipe(cur);
+        this.#renderInspector();
+        return;
+      }
+      const actionBtn = event.target.closest("[data-step-action]");
+      if (actionBtn) {
+        event.preventDefault();
+        const stepEl = actionBtn.closest(".fcr-step");
+        const stepId = stepEl?.dataset?.stepId;
+        if (!stepId) return;
+        const cur = getRecipe(recipe.id);
+        const step = cur ? findStep(cur, stepId) : null;
+        if (!step) return;
+        if (actionBtn.dataset.stepAction === "delete") {
+          const hasChildren = (step.children?.length ?? 0) > 0;
+          if (hasChildren) {
+            const ok = await Dialog.confirm({
+              title: L("step.delete"),
+              content: `<p>${esc(F("step.deleteConfirm", { name: step.label || L("step.missingTable") }))}</p>`,
+              rejectClose: false
+            });
+            if (!ok) return;
+          }
+          removeStep(cur, stepId);
+          await upsertRecipe(cur);
+          // Re-render the dashboard so the tile badge / step-count updates.
+          this.render(false);
+        }
+      }
+    });
+
+    // Drop a RollTable from the sidebar onto a step row → child step of that step.
+    tree.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+      const target = event.target.closest(".fcr-step-row");
+      const previous = tree.querySelector(".fcr-step-row.fcr-step-drop-target");
+      if (previous && previous !== target) previous.classList.remove("fcr-step-drop-target");
+      if (target) target.classList.add("fcr-step-drop-target");
+    });
+
+    tree.addEventListener("dragleave", (event) => {
+      if (!event.relatedTarget || !tree.contains(event.relatedTarget)) {
+        tree.querySelectorAll(".fcr-step-row.fcr-step-drop-target")
+          .forEach((el) => el.classList.remove("fcr-step-drop-target"));
+      }
+    });
+
+    tree.addEventListener("drop", async (event) => {
+      tree.querySelectorAll(".fcr-step-row.fcr-step-drop-target")
+        .forEach((el) => el.classList.remove("fcr-step-drop-target"));
+      const targetRow = event.target.closest(".fcr-step-row");
+      if (!targetRow) return;
+      const targetStepId = targetRow.closest(".fcr-step")?.dataset?.stepId;
+      if (!targetStepId) return;
+
+      // Two payload kinds we care about: external sidebar drops (RollTable
+      // payload) and internal step-handle drags (data-internal-step).
+      const internalId = event.dataTransfer.getData("application/x-fcr-step");
+      if (internalId) {
+        event.preventDefault();
+        if (internalId === targetStepId) return;
+        const cur = getRecipe(recipe.id);
+        if (!cur) return;
+        const ok = moveStep(cur, internalId, targetStepId, undefined);
+        if (ok) {
+          await upsertRecipe(cur);
+          this.#renderInspector();
+        }
+        return;
+      }
+
+      let payload;
+      try {
+        payload = JSON.parse(event.dataTransfer.getData("text/plain"));
+      } catch {
+        return;
+      }
+      if (payload?.type !== "RollTable") return;
+      event.preventDefault();
+      const uuid = payload.uuid ?? (payload.id ? `RollTable.${payload.id}` : null);
+      if (!uuid) return;
+      const table = await fromUuid(uuid).catch(() => null);
+      if (!table) {
+        ui.notifications.warn(L("missingTable"));
+        return;
+      }
+      const cur = getRecipe(recipe.id);
+      if (!cur) return;
+      addStep(cur, targetStepId, makeStep({ tableUuid: uuid, label: table.name }));
+      await upsertRecipe(cur);
+      this.render(false);
+    });
+
+    // Internal drag of a step (handle) for reorder.
+    tree.querySelectorAll(".fcr-step-row[draggable=true]").forEach((row) => {
+      row.addEventListener("dragstart", (event) => {
+        const id = row.closest(".fcr-step")?.dataset?.stepId;
+        if (!id) return;
+        event.dataTransfer.setData("application/x-fcr-step", id);
+        event.dataTransfer.effectAllowed = "move";
+        row.closest(".fcr-step")?.classList.add("fcr-step-dragging");
+      });
+      row.addEventListener("dragend", () => {
+        row.closest(".fcr-step")?.classList.remove("fcr-step-dragging");
+      });
+    });
+
+    // Wire the recipe-name input change.
+    const root = this.element;
+    const nameInput = root?.querySelector(".fcr-inspector-name");
+    if (nameInput && !nameInput.dataset.fcrBound) {
+      nameInput.dataset.fcrBound = "1";
+      nameInput.addEventListener("change", async () => {
+        const cur = getRecipe(recipe.id);
+        if (!cur) return;
+        const value = String(nameInput.value ?? "").trim() || cur.name;
+        cur.name = value;
+        await upsertRecipe(cur);
+        this.render(false); // tile name update on the canvas
+      });
+    }
   }
 
   /* -------------------------------------------- */
