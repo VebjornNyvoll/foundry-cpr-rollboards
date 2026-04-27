@@ -3,14 +3,9 @@ export const MODULE_ID = "foundry-cpr-rollboards";
 // i18n namespace — uppercase, hyphens, mirrors module id.
 export const I18N_NS = "FOUNDRY-CPR-ROLLBOARDS";
 
-// Per-scene flag holding the dashboard layout for that scene's tab.
-// Shape: { showNames: boolean, tiles: [{ recipeId, x, y }] }
-export const FLAG_DASHBOARD = "dashboard";
-
 // World settings keyed off the module id.
-export const SETTING_SELECTED_SCENES = "selectedScenes";   // Array<string>
-export const SETTING_RECIPES = "recipes";                  // { [id]: Recipe }
-export const SETTING_PRESETS = "presets";                  // { [id]: Preset }
+export const SETTING_BOARDS = "boards";    // { [id]: Board }
+export const SETTING_RECIPES = "recipes";  // { [id]: Recipe }
 
 // Tunables.
 export const TILE_SIZE = 64;

@@ -2,16 +2,14 @@
  * foundry-cpr-rollboards — entry point.
  *
  * Registers the GM-only Rollboards window, the Roll Tables sidebar header
- * button, and a Scene Controls button as alternate openers. Re-renders the
- * dashboard on scene create/update/delete so tabs stay in sync.
+ * button, and the Ctrl+Enter Roll-all keybind.
  */
 
 import {
   MODULE_ID,
   I18N_NS,
-  SETTING_SELECTED_SCENES,
-  SETTING_RECIPES,
-  SETTING_PRESETS
+  SETTING_BOARDS,
+  SETTING_RECIPES
 } from "./constants.mjs";
 import { RollboardDashboard } from "./rollboards.mjs";
 
@@ -29,29 +27,21 @@ function openDashboard() {
 function rollAllShortcut() {
   if (!game.user?.isGM) return false;
   if (!_dashboardApp?.rendered) return false;
-  _dashboardApp.rollAllOnActiveTab();
+  _dashboardApp.rollAllOnActiveBoard();
   return true;
 }
 
 Hooks.once("init", () => {
-  // Which scenes get a tab on the dashboard.
-  game.settings.register(MODULE_ID, SETTING_SELECTED_SCENES, {
-    scope: "world",
-    config: false,
-    type: Array,
-    default: []
-  });
-
-  // Recipe library — keyed by recipe id, shareable across scenes/tabs.
-  game.settings.register(MODULE_ID, SETTING_RECIPES, {
+  // Dashboard tabs (boards). User-named, scene-independent.
+  game.settings.register(MODULE_ID, SETTING_BOARDS, {
     scope: "world",
     config: false,
     type: Object,
     default: {}
   });
 
-  // Named tile-layout presets.
-  game.settings.register(MODULE_ID, SETTING_PRESETS, {
+  // Recipe library — keyed by recipe id, shareable across boards.
+  game.settings.register(MODULE_ID, SETTING_RECIPES, {
     scope: "world",
     config: false,
     type: Object,
@@ -61,12 +51,10 @@ Hooks.once("init", () => {
   // Public API for macros / dev tools.
   game.modules.get(MODULE_ID).api = { open: openDashboard };
 
-  // Ctrl+Enter while the dashboard is open → roll every tile on the active tab.
+  // Ctrl+Enter while the dashboard is open → roll every tile on the active board.
   game.keybindings.register(MODULE_ID, "rollAll", {
     name: `${I18N_NS}.keybind.rollAll`,
-    editable: [
-      { key: "Enter", modifiers: ["Control"] }
-    ],
+    editable: [{ key: "Enter", modifiers: ["Control"] }],
     onDown: () => rollAllShortcut(),
     restricted: true,
     precedence: foundry.CONST?.KEYBINDING_PRECEDENCE?.NORMAL ?? CONST.KEYBINDING_PRECEDENCE.NORMAL
@@ -74,26 +62,8 @@ Hooks.once("init", () => {
 });
 
 /**
- * Scene Controls: token layer button (GM-only). Mirrors the macro-dashboards
- * affordance so the GM has a one-click opener regardless of which sidebar
- * tab is active.
- */
-Hooks.on("getSceneControlButtons", (controls) => {
-  if (!game.user?.isGM) return;
-  const tokenControls = controls.find((c) => c.name === "token");
-  if (!tokenControls) return;
-  tokenControls.tools.push({
-    name: "cpr-rollboards",
-    title: `${I18N_NS}.openDashboard`,
-    icon: "fas fa-dice-d20",
-    button: true,
-    visible: game.user.isGM,
-    onClick: () => openDashboard()
-  });
-});
-
-/**
- * Header button on the Roll Tables sidebar directory.
+ * Header button on the Roll Tables sidebar directory — the natural home for
+ * a roll-table tool. The GM opens the dashboard from there.
  */
 Hooks.on("renderRollTableDirectory", (app, html) => {
   if (!game.user?.isGM) return;
@@ -111,10 +81,3 @@ Hooks.on("renderRollTableDirectory", (app, html) => {
   btn.addEventListener("click", () => openDashboard());
   header.appendChild(btn);
 });
-
-// Keep the tab bar in sync with the scene list.
-for (const hook of ["createScene", "updateScene", "deleteScene"]) {
-  Hooks.on(hook, () => {
-    if (_dashboardApp?.rendered) _dashboardApp.render(false);
-  });
-}

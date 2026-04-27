@@ -1,25 +1,25 @@
-{{!-- CPR Rollboards — GM-only. Tabs per scene; canvas of recipe tiles; inspector side panel; results drawer. --}}
+{{!-- CPR Rollboards — GM-only. Tabs per user-named board; canvas of recipe tiles; inspector side panel; results drawer. --}}
 <div class="fcr-root">
-  <nav class="fcr-tabs" aria-label="{{localize 'FOUNDRY-CPR-ROLLBOARDS.scenes'}}">
-    {{#if hasScenes}}
-      {{#each scenes}}
+  <nav class="fcr-tabs" aria-label="{{localize 'FOUNDRY-CPR-ROLLBOARDS.boards.label'}}">
+    {{#if hasBoards}}
+      {{#each boards}}
         <button type="button"
                 class="fcr-tab{{#if active}} fcr-tab-active{{/if}}"
                 data-action="selectTab"
-                data-scene-id="{{id}}"
+                data-board-id="{{id}}"
                 title="{{name}}">
           {{name}}
         </button>
       {{/each}}
     {{else}}
       <span class="fcr-empty-tabs">
-        {{#if hasAnyScenesInWorld}}
-          {{localize "FOUNDRY-CPR-ROLLBOARDS.noScenesSelected"}}
-        {{else}}
-          {{localize "FOUNDRY-CPR-ROLLBOARDS.noScenes"}}
-        {{/if}}
+        {{localize "FOUNDRY-CPR-ROLLBOARDS.boards.noneYet"}}
       </span>
     {{/if}}
+    <button type="button" class="fcr-tab-add" data-action="newBoard"
+            title="{{localize 'FOUNDRY-CPR-ROLLBOARDS.boards.newBoard'}}">
+      <i class="fas fa-plus"></i>
+    </button>
   </nav>
 
   <div class="fcr-toolbar">
@@ -27,7 +27,7 @@
       <input type="checkbox"
              data-action="toggleNames"
              {{#if showNames}}checked{{/if}}
-             {{#unless activeSceneId}}disabled{{/unless}} />
+             {{#unless activeBoardId}}disabled{{/unless}} />
       {{localize "FOUNDRY-CPR-ROLLBOARDS.showNames"}}
     </label>
 
@@ -42,33 +42,10 @@
 
     <span class="fcr-toolbar-sep"></span>
 
-    <button type="button" class="fcr-btn" data-action="openSceneSelector"
-            title="{{localize 'FOUNDRY-CPR-ROLLBOARDS.sceneSelectorTooltip'}}">
-      <i class="fas fa-list-check"></i>
-      {{localize "FOUNDRY-CPR-ROLLBOARDS.sceneSelectorButton"}}
-    </button>
-
-    <span class="fcr-toolbar-sep"></span>
-
-    <button type="button" class="fcr-btn" data-action="savePreset"
-            {{#unless canActSave}}disabled{{/unless}}
-            title="{{localize 'FOUNDRY-CPR-ROLLBOARDS.savePresetTooltip'}}">
-      <i class="fas fa-floppy-disk"></i>
-      {{localize "FOUNDRY-CPR-ROLLBOARDS.savePresetButton"}}
-    </button>
-
-    <button type="button" class="fcr-btn" data-action="importPreset"
-            {{#unless canActImport}}disabled{{/unless}}
-            title="{{localize 'FOUNDRY-CPR-ROLLBOARDS.importPresetTooltip'}}">
-      <i class="fas fa-file-import"></i>
-      {{localize "FOUNDRY-CPR-ROLLBOARDS.importPresetButton"}}
-    </button>
-
-    <button type="button" class="fcr-btn" data-action="managePresets"
-            {{#unless canManagePresets}}disabled{{/unless}}
-            title="{{localize 'FOUNDRY-CPR-ROLLBOARDS.managePresetsTooltip'}}">
-      <i class="fas fa-sliders"></i>
-      {{localize "FOUNDRY-CPR-ROLLBOARDS.managePresetsButton"}}
+    <button type="button" class="fcr-btn" data-action="openBoardsManager"
+            title="{{localize 'FOUNDRY-CPR-ROLLBOARDS.boards.manageTooltip'}}">
+      <i class="fas fa-folder-tree"></i>
+      {{localize "FOUNDRY-CPR-ROLLBOARDS.boards.manageButton"}}
     </button>
 
     <span class="fcr-hint">{{localize "FOUNDRY-CPR-ROLLBOARDS.hint"}}</span>
@@ -76,7 +53,7 @@
 
   <div class="fcr-main">
     <div class="fcr-canvas-scroll">
-      <div class="fcr-canvas" data-scene-id="{{activeSceneId}}">
+      <div class="fcr-canvas" data-board-id="{{activeBoardId}}">
         {{#each tiles}}
           <div class="fcr-tile{{#if ../showNames}} fcr-with-name{{/if}}{{#if missing}} fcr-missing{{/if}}{{#if editing}} fcr-tile-editing{{/if}}"
                data-recipe-id="{{recipeId}}"
@@ -116,13 +93,13 @@
 
         {{#unless tiles.length}}
           <div class="fcr-canvas-empty">
-            {{#if activeSceneId}}
+            {{#if activeBoardId}}
               {{localize "FOUNDRY-CPR-ROLLBOARDS.dropHere"}}
             {{else}}
-              {{#if hasAnyScenesInWorld}}
-                {{localize "FOUNDRY-CPR-ROLLBOARDS.pickScenesToStart"}}
+              {{#if hasBoards}}
+                {{localize "FOUNDRY-CPR-ROLLBOARDS.boards.pickOne"}}
               {{else}}
-                {{localize "FOUNDRY-CPR-ROLLBOARDS.selectScene"}}
+                {{localize "FOUNDRY-CPR-ROLLBOARDS.boards.createFirst"}}
               {{/if}}
             {{/if}}
           </div>
@@ -144,9 +121,6 @@
         </div>
         <p class="fcr-inspector-hint">{{localize "FOUNDRY-CPR-ROLLBOARDS.inspectorHint"}}</p>
         <div class="fcr-inspector-tree" data-action-scope="inspector"></div>
-        <div class="fcr-inspector-footer">
-          <span class="fcr-inspector-foot-hint">{{localize "FOUNDRY-CPR-ROLLBOARDS.inspectorRootHint"}}</span>
-        </div>
       </aside>
     {{/if}}
   </div>

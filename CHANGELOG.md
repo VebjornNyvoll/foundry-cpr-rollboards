@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.2.0 — Boards model + redesigned inspector (BREAKING)
+
+Rip-and-replace of the macro-dashboards-inherited scene/preset architecture, which never made sense for recipes. Recipes are themselves the named persistent thing — wrapping them in tiles inside scenes inside presets gave four levels of organisation for what should be two.
+
+- **Boards replace scene-tabs.** Boards are user-created, named, scene-independent. Stored in a single world setting `boards: {[id]: {id, name, showNames, tiles, sort, createdAt, updatedAt}}`. Tab strip has a `+` button to create a new board inline.
+- **Presets removed.** Boards themselves serve the same purpose — if you want a "starter encounter" layout, save it as its own board.
+- **Scenes…, Save preset, Import preset, Manage presets buttons removed.** Replaced by a single `Boards…` button (manage / rename / delete) plus the `+` tab button (create).
+- **`getSceneControlButtons` opener removed.** The Roll Tables sidebar header button is the natural opener.
+- **Scene-watching hooks removed** (`createScene` / `updateScene` / `deleteScene`).
+- **Inspector step rows redesigned.** Two-row layout per step:
+  - Top row: drag handle · table-name input (full width) · delete ×
+  - Bottom row (smaller, muted): count · chance % · prompt toggle · optional toggle
+  - Default values (count=1, chance=100%) are visually quiet so a clean recipe looks calm.
+  - The label input now actually shows the **table's resolved name** (fetched async on render) instead of a `uuid: cGU…` debug stub. The hover tooltip on the label reveals the source table.
+  - Empty-state placeholder when a recipe has no steps.
+- **Settings storage cleanup.** Drops `selectedScenes` and `presets` settings; drops the per-scene `dashboard` flag. Existing data in those locations is left in the world but no longer read — Foundry just ignores it.
+
+### Migration
+
+Recipes are preserved (they live in the recipe library setting, untouched). Existing scene-flag tile placements are dropped — re-create your boards via the `+` tab button. Recipes drag-drop back onto the new boards just as before.
+
 ## 0.1.1 — CPR pack data verified against source
 
 Fixes three lurking bugs in the v0.1.0 Mook generator caused by guessed-not-verified data:

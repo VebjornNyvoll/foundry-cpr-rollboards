@@ -1,18 +1,16 @@
 /**
  * RollboardDashboard — GM-only rollboard window.
  *
- * One window. One tab per Scene. Each tab is a free-positioning canvas of
- * recipe tiles; clicking a tile rolls its recipe and a card lands in the
- * drawer at the bottom of the window. No global chat spam.
+ * One window. One tab per user-named board. Each board is a free-positioning
+ * canvas of recipe tiles. Clicking a tile rolls its recipe and a card lands
+ * in the drawer at the bottom of the window. No global chat spam.
  *
  * Persistence:
- *   scene.flags["foundry-cpr-rollboards"].dashboard = {
- *     showNames: boolean,
- *     tiles: [{ recipeId, x, y }]
- *   }
- *   game.settings("foundry-cpr-rollboards", "recipes")  : { [id]: Recipe }
- *   game.settings("foundry-cpr-rollboards", "presets")  : { [id]: Preset }
- *   game.settings("foundry-cpr-rollboards", "selectedScenes") : string[]
+ *   game.settings("foundry-cpr-rollboards", "boards")
+ *     → { [id]: { id, name, showNames, tiles: [{recipeId, x, y}],
+ *                 sort, createdAt, updatedAt } }
+ *   game.settings("foundry-cpr-rollboards", "recipes")
+ *     → { [id]: Recipe }
  *
  * Roll history (drawer cards) lives in module memory on the singleton —
  * session-scoped, cleared on window close.
@@ -21,15 +19,21 @@
 import {
   MODULE_ID,
   I18N_NS,
-  FLAG_DASHBOARD,
-  SETTING_SELECTED_SCENES,
-  SETTING_PRESETS,
   TILE_SIZE,
   NAME_HEIGHT,
   DRAG_THRESHOLD,
   CANVAS_PADDING,
   MAX_DRAW_HISTORY
 } from "./constants.mjs";
+
+import {
+  readBoards,
+  listBoards,
+  getBoard,
+  upsertBoard,
+  deleteBoard,
+  makeBoard
+} from "./boards.mjs";
 
 import {
   readRecipes,
@@ -39,7 +43,6 @@ import {
   makeStep,
   countSteps,
   findStep,
-  findStepLocation,
   addStep,
   removeStep,
   moveStep,
@@ -55,10 +58,6 @@ function L(key) { return game.i18n.localize(`${I18N_NS}.${key}`); }
 function F(key, data) { return game.i18n.format(`${I18N_NS}.${key}`, data); }
 function esc(s) { return Handlebars.escapeExpression(String(s ?? "")); }
 
-function emptyData() {
-  return { showNames: true, tiles: [] };
-}
-
 /** Strip HTML tags from a roll-table result so we can use it as a name/notes seed. */
 function stripTags(html) {
   if (!html) return "";
@@ -67,40 +66,9 @@ function stripTags(html) {
   return (div.textContent ?? "").replace(/\s+/g, " ").trim();
 }
 
-function readData(scene) {
-  const flag = scene?.getFlag(MODULE_ID, FLAG_DASHBOARD);
-  if (!flag) return emptyData();
-  return {
-    showNames: flag.showNames !== false,
-    tiles: Array.isArray(flag.tiles) ? flag.tiles.map((t) => ({ ...t })) : []
-  };
-}
-
-async function writeData(scene, data) {
-  return scene.setFlag(MODULE_ID, FLAG_DASHBOARD, data);
-}
-
-function readSelectedSceneIds() {
-  const raw = game.settings.get(MODULE_ID, SETTING_SELECTED_SCENES);
-  return Array.isArray(raw) ? raw : [];
-}
-
-async function writeSelectedSceneIds(ids) {
-  return game.settings.set(MODULE_ID, SETTING_SELECTED_SCENES, Array.from(new Set(ids)));
-}
-
-function readPresets() {
-  const raw = game.settings.get(MODULE_ID, SETTING_PRESETS);
-  return (raw && typeof raw === "object") ? raw : {};
-}
-
-async function writePresets(presets) {
-  return game.settings.set(MODULE_ID, SETTING_PRESETS, presets);
-}
-
 export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
-  /** @type {string|null} currently active scene id */
-  #activeSceneId = null;
+  /** @type {string|null} currently active board id */
+  #activeBoardId = null;
 
   /** @type {ResizeObserver|null} */
   #resizeObserver = null;
@@ -116,6 +84,9 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
 
   /** @type {HTMLElement|null} active right-click popup, if any */
   #popupEl = null;
+
+  /** @type {Map<string,string>} cache of resolved table names by uuid (per render) */
+  #tableNameCache = new Map();
 
   static DEFAULT_OPTIONS = {
     id: "foundry-cpr-rollboards-app",
@@ -135,10 +106,8 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
       deleteTile: RollboardDashboard.#onDeleteTile,
       rollAll: RollboardDashboard.#onRollAll,
       closeInspector: RollboardDashboard.#onCloseInspector,
-      openSceneSelector: RollboardDashboard.#onOpenSceneSelector,
-      savePreset: RollboardDashboard.#onSavePreset,
-      importPreset: RollboardDashboard.#onImportPreset,
-      managePresets: RollboardDashboard.#onManagePresets,
+      openBoardsManager: RollboardDashboard.#onOpenBoardsManager,
+      newBoard: RollboardDashboard.#onNewBoard,
       toggleDrawer: RollboardDashboard.#onToggleDrawer,
       clearDraws: RollboardDashboard.#onClearDraws
     }
@@ -147,7 +116,7 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
   static PARTS = {
     body: {
       template: `modules/${MODULE_ID}/templates/rollboards.hbs`,
-      scrollable: [".fcr-canvas-scroll", ".fcr-drawer-body"]
+      scrollable: [".fcr-canvas-scroll", ".fcr-drawer-body", ".fcr-inspector-tree"]
     }
   };
 
@@ -156,22 +125,21 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
   /* -------------------------------------------- */
 
   async _prepareContext(options) {
-    const selectedIds = new Set(readSelectedSceneIds());
-    const scenes = Array.from(game.scenes ?? [])
-      .filter((s) => selectedIds.has(s.id))
-      .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0));
+    const boards = listBoards();
 
-    if (!this.#activeSceneId || !scenes.some((s) => s.id === this.#activeSceneId)) {
-      const viewedId = game.scenes?.viewed?.id;
-      this.#activeSceneId = (viewedId && selectedIds.has(viewedId)) ? viewedId : (scenes[0]?.id ?? null);
+    // Reset active board if it was deleted.
+    if (this.#activeBoardId && !boards.some((b) => b.id === this.#activeBoardId)) {
+      this.#activeBoardId = null;
+    }
+    // Default active board: first one if no current selection.
+    if (!this.#activeBoardId && boards.length) {
+      this.#activeBoardId = boards[0].id;
     }
 
-    const presetCount = Object.keys(readPresets()).length;
-    const activeScene = this.#activeSceneId ? game.scenes.get(this.#activeSceneId) : null;
-    const data = activeScene ? readData(activeScene) : emptyData();
+    const activeBoard = getBoard(this.#activeBoardId);
     const recipes = readRecipes();
 
-    const tiles = data.tiles.map((t) => {
+    const tiles = (activeBoard?.tiles ?? []).map((t) => {
       const recipe = recipes[t.recipeId];
       const stepCount = recipe ? countSteps(recipe) : 0;
       return {
@@ -187,7 +155,7 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
       };
     });
 
-    // Drop the editing id if its recipe vanished or its tile was removed.
+    // Drop the editing id if its recipe vanished.
     let inspectorOpen = false;
     let editingRecipeName = "";
     if (this.#editingRecipeId) {
@@ -204,20 +172,16 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
       moduleId: MODULE_ID,
       tileSize: TILE_SIZE,
       nameHeight: NAME_HEIGHT,
-      scenes: scenes.map((s) => ({
-        id: s.id,
-        name: s.name,
-        active: s.id === this.#activeSceneId
+      boards: boards.map((b) => ({
+        id: b.id,
+        name: b.name,
+        active: b.id === this.#activeBoardId
       })),
-      hasScenes: scenes.length > 0,
-      hasAnyScenesInWorld: (game.scenes?.size ?? 0) > 0,
-      activeSceneId: this.#activeSceneId,
-      showNames: data.showNames,
+      hasBoards: boards.length > 0,
+      activeBoardId: this.#activeBoardId,
+      showNames: activeBoard?.showNames !== false,
       tiles,
-      canActSave: !!activeScene && data.tiles.length > 0,
-      canActImport: !!activeScene && presetCount > 0,
-      canManagePresets: presetCount > 0,
-      canRollAll: !!activeScene && data.tiles.length > 0,
+      canRollAll: !!activeBoard && tiles.length > 0,
       inspectorOpen,
       editingRecipeId: this.#editingRecipeId ?? "",
       editingRecipeName,
@@ -245,10 +209,7 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
       this.#resizeObserver.observe(scroll);
     }
 
-    // Render draw cards into the drawer (manual DOM — too dynamic for hbs).
     if (this.#drawerOpen) this.#renderCards();
-
-    // Render and wire the inspector tree if it's open.
     if (this.#editingRecipeId) this.#renderInspector();
   }
 
@@ -279,8 +240,6 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
     canvas.addEventListener("dragover", (event) => {
       event.preventDefault();
       event.dataTransfer.dropEffect = "copy";
-      // Highlight any tile currently under the cursor so the GM sees that
-      // dropping there appends a step instead of creating a new tile.
       const tile = event.target.closest(".fcr-tile");
       const previous = canvas.querySelector(".fcr-tile.fcr-tile-droptarget");
       if (previous && previous !== tile) previous.classList.remove("fcr-tile-droptarget");
@@ -288,9 +247,6 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
     });
 
     canvas.addEventListener("dragleave", (event) => {
-      // The dragleave fires per-element, so re-check whether the pointer is
-      // still over a child of the canvas. relatedTarget can be null when the
-      // cursor exits the window entirely.
       if (!event.relatedTarget || !canvas.contains(event.relatedTarget)) {
         canvas.querySelectorAll(".fcr-tile.fcr-tile-droptarget")
           .forEach((el) => el.classList.remove("fcr-tile-droptarget"));
@@ -346,8 +302,11 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
       return;
     }
 
-    const scene = this.#currentScene();
-    if (!scene) return;
+    const board = this.#currentBoard();
+    if (!board) {
+      ui.notifications.warn(L("noActiveBoard"));
+      return;
+    }
 
     // If the drop lands on an existing tile, append a step to that recipe
     // instead of creating a brand-new tile. This is how you build chains
@@ -359,22 +318,20 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
       if (recipe) {
         addStep(recipe, null, makeStep({ tableUuid: table.uuid, label: table.name }));
         await upsertRecipe(recipe);
-        // Open the inspector so the GM can see the new step land in the tree.
         this.#editingRecipeId = recipe.id;
         this.render(false);
         return;
       }
     }
 
-    // Default: build a single-step recipe from the dropped table and place a
-    // new tile at the drop point.
+    // Default: build a single-step recipe and place a new tile at the drop
+    // point.
     const recipe = recipeFromTable(table);
     await upsertRecipe(recipe);
 
     const { x, y } = this.#clampToCanvas(canvas, event.clientX, event.clientY, true);
-    const data = readData(scene);
-    data.tiles.push({ recipeId: recipe.id, x, y });
-    await writeData(scene, data);
+    board.tiles.push({ recipeId: recipe.id, x, y });
+    await upsertBoard(board);
     this.render(false);
   }
 
@@ -386,6 +343,7 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
     tile.addEventListener("pointerdown", (event) => {
       if (event.button !== 0) return;
       if (event.target.closest(".fcr-tile-delete")) return;
+      if (event.target.closest(".fcr-tile-edit")) return;
 
       const recipeId = tile.dataset.recipeId;
       const startX = event.clientX;
@@ -421,18 +379,16 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
         }
         if (!moved) return;
 
-        // Swallow the synthetic click queued by the browser after pointerup,
-        // so the recipe doesn't fire at the end of a drag.
+        // Swallow the synthetic click queued by the browser after pointerup.
         tile.dataset.fcrSuppressClick = "1";
 
-        const scene = this.#currentScene();
-        if (!scene) return;
-        const data = readData(scene);
-        const entry = data.tiles.find((t) => t.recipeId === recipeId);
+        const board = this.#currentBoard();
+        if (!board) return;
+        const entry = board.tiles.find((t) => t.recipeId === recipeId);
         if (!entry) return;
         entry.x = parseFloat(tile.style.left) || 0;
         entry.y = parseFloat(tile.style.top) || 0;
-        await writeData(scene, data);
+        await upsertBoard(board);
       };
 
       tile.addEventListener("pointermove", onMove);
@@ -456,18 +412,17 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
 
   static async #onSelectTab(event, target) {
     event.preventDefault();
-    const sceneId = target.dataset.sceneId;
-    if (!sceneId) return;
-    this.#activeSceneId = sceneId;
+    const boardId = target.dataset.boardId;
+    if (!boardId) return;
+    this.#activeBoardId = boardId;
     this.render(false);
   }
 
   static async #onToggleNames(event, target) {
-    const scene = this.#currentScene();
-    if (!scene) return;
-    const data = readData(scene);
-    data.showNames = !!target.checked;
-    await writeData(scene, data);
+    const board = this.#currentBoard();
+    if (!board) return;
+    board.showNames = !!target.checked;
+    await upsertBoard(board);
     this.render(false);
   }
 
@@ -487,7 +442,7 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
     }
 
     const counts = await this.#collectPromptCounts(recipe);
-    if (counts === false) return; // user cancelled the prompt dialog
+    if (counts === false) return;
 
     let card;
     try {
@@ -508,13 +463,108 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
     this.render(false);
   }
 
+  static async #onDeleteTile(event, target) {
+    event.preventDefault();
+    event.stopPropagation();
+    const recipeId = target.dataset.recipeId;
+    if (!recipeId) return;
+    const board = this.#currentBoard();
+    if (!board) return;
+    board.tiles = board.tiles.filter((t) => t.recipeId !== recipeId);
+    await upsertBoard(board);
+    this.render(false);
+  }
+
+  static async #onToggleDrawer(event) {
+    event.preventDefault();
+    this.#drawerOpen = !this.#drawerOpen;
+    this.render(false);
+  }
+
+  static async #onClearDraws(event) {
+    event.preventDefault();
+    if (!this.#draws.length) return;
+    const ok = await Dialog.confirm({
+      title: L("drawerClear"),
+      content: `<p>${esc(L("drawerClearPrompt"))}</p>`,
+      rejectClose: false
+    });
+    if (!ok) return;
+    this.#draws = [];
+    this.render(false);
+  }
+
+  static async #onEditTile(event, target) {
+    event.preventDefault();
+    event.stopPropagation();
+    const recipeId = target.dataset.recipeId;
+    if (!recipeId) return;
+    if (!getRecipe(recipeId)) {
+      ui.notifications.warn(L("missingRecipe"));
+      return;
+    }
+    this.#editingRecipeId = recipeId;
+    this.render(false);
+  }
+
+  static async #onCloseInspector(event) {
+    event?.preventDefault?.();
+    this.#editingRecipeId = null;
+    this.render(false);
+  }
+
+  static async #onRollAll(event) {
+    event?.preventDefault?.();
+    return this.rollAllOnActiveBoard();
+  }
+
+  static async #onOpenBoardsManager(event) {
+    event?.preventDefault?.();
+    return this.#openBoardsManagerDialog();
+  }
+
+  static async #onNewBoard(event) {
+    event?.preventDefault?.();
+    return this.#promptNewBoard();
+  }
+
   /**
-   * Collect counts for all prompt-mode steps in a recipe via a single dialog.
-   * Returns:
-   *   - null if there are no prompt-mode steps,
-   *   - { [stepId]: count } if the GM accepted,
-   *   - false if the GM cancelled (caller should abort the roll).
+   * Public entry point for the keybind in main.mjs.
+   * Rolls every tile on the active board in placement order.
    */
+  async rollAllOnActiveBoard() {
+    const board = this.#currentBoard();
+    if (!board) {
+      ui.notifications.warn(L("noActiveBoard"));
+      return;
+    }
+    if (!board.tiles.length) {
+      ui.notifications.warn(L("rollAllNothing"));
+      return;
+    }
+
+    const ordered = [...board.tiles].sort((a, b) => (a.y - b.y) || (a.x - b.x));
+    let rolled = 0;
+    for (const tile of ordered) {
+      const recipe = getRecipe(tile.recipeId);
+      if (!recipe) continue;
+      const counts = await this.#collectPromptCounts(recipe);
+      if (counts === false) continue;
+      try {
+        const card = await rollRecipe(recipe, {
+          countOverride: (step) => counts?.[step.id]
+        });
+        this.#draws.unshift(card);
+        rolled++;
+      } catch (err) {
+        console.error(`${MODULE_ID} | rollAll: rollRecipe failed`, err);
+      }
+    }
+    if (this.#draws.length > MAX_DRAW_HISTORY) this.#draws.length = MAX_DRAW_HISTORY;
+    if (rolled > 0 && !this.#drawerOpen) this.#drawerOpen = true;
+    this.render(false);
+  }
+
   async #collectPromptCounts(recipe) {
     const prompts = [];
     const walk = (steps) => {
@@ -563,108 +613,13 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
     });
   }
 
-  static async #onDeleteTile(event, target) {
-    event.preventDefault();
-    event.stopPropagation();
-    const recipeId = target.dataset.recipeId;
-    if (!recipeId) return;
-    const scene = this.#currentScene();
-    if (!scene) return;
-    const data = readData(scene);
-    data.tiles = data.tiles.filter((t) => t.recipeId !== recipeId);
-    await writeData(scene, data);
-    this.render(false);
-  }
-
-  static async #onToggleDrawer(event) {
-    event.preventDefault();
-    this.#drawerOpen = !this.#drawerOpen;
-    this.render(false);
-  }
-
-  static async #onClearDraws(event) {
-    event.preventDefault();
-    if (!this.#draws.length) return;
-    const ok = await Dialog.confirm({
-      title: L("drawerClear"),
-      content: `<p>${esc(L("drawerClearPrompt"))}</p>`,
-      rejectClose: false
-    });
-    if (!ok) return;
-    this.#draws = [];
-    this.render(false);
-  }
-
-  static async #onEditTile(event, target) {
-    event.preventDefault();
-    event.stopPropagation();
-    const recipeId = target.dataset.recipeId;
-    if (!recipeId) return;
-    if (!getRecipe(recipeId)) {
-      ui.notifications.warn(L("missingRecipe"));
-      return;
-    }
-    this.#editingRecipeId = recipeId;
-    this.render(false);
-  }
-
-  static async #onCloseInspector(event) {
-    event?.preventDefault?.();
-    this.#editingRecipeId = null;
-    this.render(false);
-  }
-
-  static async #onRollAll(event) {
-    event?.preventDefault?.();
-    return this.rollAllOnActiveTab();
-  }
-
-  /**
-   * Public entry point for the keybind in main.mjs.
-   * Rolls every tile on the active tab in placement order.
-   */
-  async rollAllOnActiveTab() {
-    const scene = this.#currentScene();
-    if (!scene) {
-      ui.notifications.warn(L("noActiveTab"));
-      return;
-    }
-    const data = readData(scene);
-    if (!data.tiles.length) {
-      ui.notifications.warn(L("rollAllNothing"));
-      return;
-    }
-
-    // Roll in a stable order so the drawer reflects the layout sequence.
-    const ordered = [...data.tiles].sort((a, b) => (a.y - b.y) || (a.x - b.x));
-    let rolled = 0;
-    for (const tile of ordered) {
-      const recipe = getRecipe(tile.recipeId);
-      if (!recipe) continue;
-      const counts = await this.#collectPromptCounts(recipe);
-      if (counts === false) continue; // skip this tile if the GM cancelled
-      try {
-        const card = await rollRecipe(recipe, {
-          countOverride: (step) => counts?.[step.id]
-        });
-        this.#draws.unshift(card);
-        rolled++;
-      } catch (err) {
-        console.error(`${MODULE_ID} | rollAll: rollRecipe failed`, err);
-      }
-    }
-    if (this.#draws.length > MAX_DRAW_HISTORY) this.#draws.length = MAX_DRAW_HISTORY;
-    if (rolled > 0 && !this.#drawerOpen) this.#drawerOpen = true;
-    this.render(false);
-  }
-
   /* -------------------------------------------- */
   /*  Right-click popup                           */
   /* -------------------------------------------- */
 
   #onTileContextMenu(event, canvas) {
     const tileEl = event.target.closest(".fcr-tile");
-    if (!tileEl) return; // right-clicking empty canvas does nothing yet
+    if (!tileEl) return;
     event.preventDefault();
     event.stopPropagation();
     const recipeId = tileEl.dataset.recipeId;
@@ -682,8 +637,6 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
     const x = clientX - rootRect.left;
     const y = clientY - rootRect.top;
 
-    // Recipes with one root step show that step's count/chance/optional in
-    // the popup; chained recipes only get the "open inspector" affordance.
     const onlyStep = (recipe.steps?.length === 1) ? recipe.steps[0] : null;
 
     const el = document.createElement("div");
@@ -719,7 +672,6 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
     root.appendChild(el);
     this.#popupEl = el;
 
-    // Inputs save on change.
     el.addEventListener("change", async (ev) => {
       const field = ev.target?.dataset?.popupField;
       if (!field || !onlyStep) return;
@@ -732,7 +684,6 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
       await upsertRecipe(cur);
     });
 
-    // Action buttons.
     el.addEventListener("click", async (ev) => {
       const btn = ev.target.closest("[data-popup-action]");
       if (!btn) return;
@@ -748,16 +699,14 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
           rejectClose: false
         });
         if (!ok) return;
-        const scene = this.#currentScene();
-        if (!scene) return;
-        const data = readData(scene);
-        data.tiles = data.tiles.filter((t) => t.recipeId !== recipe.id);
-        await writeData(scene, data);
+        const board = this.#currentBoard();
+        if (!board) return;
+        board.tiles = board.tiles.filter((t) => t.recipeId !== recipe.id);
+        await upsertBoard(board);
         this.render(false);
       }
     });
 
-    // Dismiss on click outside.
     setTimeout(() => {
       const onDocClick = (ev) => {
         if (!el.contains(ev.target)) {
@@ -780,7 +729,7 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
   /*  Inspector                                   */
   /* -------------------------------------------- */
 
-  #renderInspector() {
+  async #renderInspector() {
     const root = this.element;
     if (!root) return;
     const tree = root.querySelector(".fcr-inspector-tree");
@@ -790,44 +739,77 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
       tree.innerHTML = "";
       return;
     }
-    tree.innerHTML = (recipe.steps ?? []).map((s) => this.#renderStepHTML(s, 0)).join("");
+
+    // Pre-resolve table names for every step so the render is sync.
+    this.#tableNameCache.clear();
+    await this.#resolveTableNames(recipe.steps ?? []);
+
+    const stepsHTML = (recipe.steps ?? []).map((s) => this.#renderStepHTML(s, 0)).join("");
+    tree.innerHTML = stepsHTML
+      ? stepsHTML
+      : `<div class="fcr-inspector-empty">${esc(L("inspectorEmpty"))}</div>`;
     this.#bindInspector(tree, recipe);
   }
 
+  async #resolveTableNames(steps) {
+    for (const s of steps ?? []) {
+      if (s.tableUuid && !this.#tableNameCache.has(s.tableUuid)) {
+        try {
+          const doc = await fromUuid(s.tableUuid);
+          this.#tableNameCache.set(s.tableUuid, doc?.name ?? "");
+        } catch {
+          this.#tableNameCache.set(s.tableUuid, "");
+        }
+      }
+      if (s.children?.length) await this.#resolveTableNames(s.children);
+    }
+  }
+
   #renderStepHTML(step, depth) {
-    const tableLabel = step.tableUuid ? esc(`uuid: ${step.tableUuid.split(".").pop()}`) : esc(L("step.missingTable"));
-    const childrenHTML = (step.children ?? []).map((c) => this.#renderStepHTML(c, depth + 1)).join("");
+    const tableName = this.#tableNameCache.get(step.tableUuid) || "";
+    const labelValue = step.label || tableName || "";
+    const sourceTooltip = tableName
+      ? `${L("step.sourceLabel")}: ${tableName}`
+      : (step.tableUuid ? `${L("step.sourceLabel")}: ${L("step.missingTable")}` : "");
     const optionalOn = !!step.optional;
     const promptOn = step.countMode === "prompt";
+    const isDefaultCount = (step.count ?? 1) === 1;
+    const isDefaultChance = (step.chance ?? 100) === 100;
+    const childrenHTML = (step.children ?? []).map((c) => this.#renderStepHTML(c, depth + 1)).join("");
+
     return `
       <div class="fcr-step" data-step-id="${esc(step.id)}" data-depth="${depth}">
         <div class="fcr-step-row" draggable="true">
-          <span class="fcr-step-handle" title="Drag to move">⋮⋮</span>
+          <span class="fcr-step-handle" title="${esc(L("step.dragToMove"))}">⋮⋮</span>
           <input type="text" class="fcr-step-label${step.tableUuid ? "" : " fcr-step-missing"}"
-                 value="${esc(step.label ?? "")}"
+                 value="${esc(labelValue)}"
                  placeholder="${esc(L("step.label"))}"
+                 title="${esc(sourceTooltip)}"
                  data-step-field="label" />
-          <span class="fcr-step-table" title="${esc(step.tableUuid ?? "")}">${tableLabel}</span>
-          <input type="number" class="fcr-step-count" min="1"
-                 value="${esc(String(step.count ?? 1))}"
-                 title="${esc(L("step.count"))}"
-                 data-step-field="count" />
-          <span class="fcr-step-flags">
-            <button type="button"
-                    class="fcr-step-flag${promptOn ? " fcr-step-flag-on" : ""}"
-                    data-step-toggle="prompt"
-                    title="${esc(L("step.countPrompt"))}">?</button>
-            <button type="button"
-                    class="fcr-step-flag${optionalOn ? " fcr-step-flag-on" : ""}"
-                    data-step-toggle="optional"
-                    title="${esc(L("step.optionalTooltip"))}">opt</button>
-          </span>
-          <input type="number" class="fcr-step-chance" min="1" max="100"
-                 value="${esc(String(step.chance ?? 100))}"
-                 title="${esc(L("step.chanceTooltip"))}"
-                 data-step-field="chance" />
           <button type="button" class="fcr-step-delete" data-step-action="delete"
                   title="${esc(L("step.delete"))}"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="fcr-step-controls">
+          <label class="fcr-step-control" title="${esc(L("step.count"))}">
+            <span class="fcr-step-control-icon">×</span>
+            <input type="number" class="fcr-step-count${isDefaultCount ? " fcr-step-default" : ""}"
+                   min="1" value="${esc(String(step.count ?? 1))}"
+                   data-step-field="count" />
+          </label>
+          <label class="fcr-step-control" title="${esc(L("step.chanceTooltip"))}">
+            <input type="number" class="fcr-step-chance${isDefaultChance ? " fcr-step-default" : ""}"
+                   min="1" max="100" value="${esc(String(step.chance ?? 100))}"
+                   data-step-field="chance" />
+            <span class="fcr-step-control-icon">%</span>
+          </label>
+          <button type="button"
+                  class="fcr-step-flag${promptOn ? " fcr-step-flag-on" : ""}"
+                  data-step-toggle="prompt"
+                  title="${esc(L("step.countPrompt"))}">${esc(L("step.promptShort"))}</button>
+          <button type="button"
+                  class="fcr-step-flag${optionalOn ? " fcr-step-flag-on" : ""}"
+                  data-step-toggle="optional"
+                  title="${esc(L("step.optionalTooltip"))}">${esc(L("step.optionalShort"))}</button>
         </div>
         ${childrenHTML
           ? `<div class="fcr-step-children">${childrenHTML}</div>`
@@ -836,7 +818,6 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
   }
 
   #bindInspector(tree, recipe) {
-    // Inline edits — auto-save on change.
     tree.addEventListener("change", async (event) => {
       const field = event.target?.dataset?.stepField;
       if (!field) return;
@@ -858,7 +839,6 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
       await upsertRecipe(cur);
     });
 
-    // Toggle buttons (prompt-mode, optional).
     tree.addEventListener("click", async (event) => {
       const toggleBtn = event.target.closest("[data-step-toggle]");
       if (toggleBtn) {
@@ -900,13 +880,12 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
           }
           removeStep(cur, stepId);
           await upsertRecipe(cur);
-          // Re-render the dashboard so the tile badge / step-count updates.
           this.render(false);
         }
       }
     });
 
-    // Drop a RollTable from the sidebar onto a step row → child step of that step.
+    // Drop handlers — child step on row, internal reorder.
     tree.addEventListener("dragover", (event) => {
       event.preventDefault();
       event.dataTransfer.dropEffect = "copy";
@@ -931,8 +910,6 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
       const targetStepId = targetRow.closest(".fcr-step")?.dataset?.stepId;
       if (!targetStepId) return;
 
-      // Two payload kinds we care about: external sidebar drops (RollTable
-      // payload) and internal step-handle drags (data-internal-step).
       const internalId = event.dataTransfer.getData("application/x-fcr-step");
       if (internalId) {
         event.preventDefault();
@@ -969,7 +946,6 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
       this.render(false);
     });
 
-    // Internal drag of a step (handle) for reorder.
     tree.querySelectorAll(".fcr-step-row[draggable=true]").forEach((row) => {
       row.addEventListener("dragstart", (event) => {
         const id = row.closest(".fcr-step")?.dataset?.stepId;
@@ -983,9 +959,9 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
       });
     });
 
-    // Wire the recipe-name input change.
-    const root = this.element;
-    const nameInput = root?.querySelector(".fcr-inspector-name");
+    // Recipe-name input change handler — bind once per render.
+    const rootEl = this.element;
+    const nameInput = rootEl?.querySelector(".fcr-inspector-name");
     if (nameInput && !nameInput.dataset.fcrBound) {
       nameInput.dataset.fcrBound = "1";
       nameInput.addEventListener("change", async () => {
@@ -994,7 +970,7 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
         const value = String(nameInput.value ?? "").trim() || cur.name;
         cur.name = value;
         await upsertRecipe(cur);
-        this.render(false); // tile name update on the canvas
+        this.render(false);
       });
     }
   }
@@ -1045,8 +1021,6 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
     } else if (node.result?.empty) {
       textHTML = `<span class="fcr-node-text fcr-node-skipped">${esc(L("result.empty"))}</span>`;
     } else {
-      // Honor the rich HTML coming back from RollTable.draw — Foundry already
-      // sanitizes this on its side, and links/inline rolls render correctly.
       textHTML = `<span class="fcr-node-text">${node.result?.text ?? ""}</span>`;
     }
 
@@ -1105,8 +1079,6 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
           }
           try {
             const fresh = await rollRecipe(recipe);
-            // Replace the card in place so it stays visually pinned at the
-            // same drawer position.
             const idx = this.#draws.findIndex((c) => c.id === cardId);
             if (idx >= 0) this.#draws[idx] = fresh;
             this.render(false);
@@ -1140,11 +1112,6 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
     });
   }
 
-  /**
-   * Build a seed `notes` string for the Mook dialog from a card + node.
-   * Includes the recipe name, the node's label/text, and any sibling rolls
-   * under the same card so the GM has context on the actor sheet.
-   */
   #buildMookNotes(card, node) {
     const lines = [`Generated from "${card.recipeName}" via CPR Rollboards.`];
     const flatten = (n, depth = 0) => {
@@ -1215,335 +1182,109 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
   }
 
   /* -------------------------------------------- */
-  /*  Scene selector                              */
+  /*  Boards manager                              */
   /* -------------------------------------------- */
 
-  static async #onOpenSceneSelector(event, target) {
-    event.preventDefault();
-    return this.#openSceneSelectorDialog();
-  }
-
-  async #openSceneSelectorDialog() {
-    const selected = new Set(readSelectedSceneIds());
-    const scenes = Array.from(game.scenes ?? []).sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0));
-
-    if (!scenes.length) {
-      ui.notifications.warn(L("noScenesInWorld"));
-      return;
-    }
-
-    const rows = scenes.map((s) => `
-      <div class="fcr-picker-row" data-scene-name="${esc(s.name.toLowerCase())}">
-        <label>
-          <input type="checkbox" name="${esc(s.id)}" ${selected.has(s.id) ? "checked" : ""} />
-          <span class="fcr-picker-row-name">${esc(s.name)}</span>
-        </label>
-      </div>
-    `).join("");
-
-    const content = `
-      <div class="fcr-picker">
-        <p class="fcr-picker-hint">${esc(L("sceneSelectorHint"))}</p>
-        <input type="search" class="fcr-picker-search"
-               placeholder="${esc(L("searchScenes"))}" autocomplete="off" />
-        <div class="fcr-picker-actions">
-          <button type="button" class="fcr-picker-all">${esc(L("selectAll"))}</button>
-          <button type="button" class="fcr-picker-none">${esc(L("selectNone"))}</button>
-        </div>
-        <div class="fcr-picker-count"></div>
-        <div class="fcr-picker-list">${rows}</div>
-        <div class="fcr-picker-empty" hidden>${esc(L("noMatches"))}</div>
-      </div>`;
-
-    return new Promise((resolve) => {
-      const dlg = new Dialog({
-        title: L("sceneSelectorTitle"),
-        content,
-        buttons: {
-          save: {
-            icon: '<i class="fas fa-check"></i>',
-            label: L("save"),
-            callback: async (html) => {
-              const root = html instanceof jQuery ? html[0] : html;
-              const ids = Array.from(root.querySelectorAll(".fcr-picker-list input[type=checkbox]:checked")).map((i) => i.name);
-              await writeSelectedSceneIds(ids);
-              resolve(ids);
-              this.render(false);
-            }
-          },
-          cancel: {
-            icon: '<i class="fas fa-times"></i>',
-            label: L("cancel"),
-            callback: () => resolve(null)
-          }
-        },
-        default: "save",
-        render: (html) => {
-          const root = html instanceof jQuery ? html[0] : html;
-          const search = root.querySelector(".fcr-picker-search");
-          const listRows = () => root.querySelectorAll(".fcr-picker-list .fcr-picker-row");
-          const emptyMsg = root.querySelector(".fcr-picker-empty");
-          const list = root.querySelector(".fcr-picker-list");
-          const countEl = root.querySelector(".fcr-picker-count");
-
-          const updateCount = () => {
-            const total = listRows().length;
-            const checked = root.querySelectorAll(".fcr-picker-list input[type=checkbox]:checked").length;
-            const visible = Array.from(listRows()).filter((r) => !r.hidden).length;
-            countEl.textContent = F("selectionCount", { checked, total, visible });
-          };
-
-          const applyFilter = () => {
-            const needle = search.value.trim().toLowerCase();
-            let visible = 0;
-            for (const row of listRows()) {
-              const match = !needle || row.dataset.sceneName.includes(needle);
-              row.hidden = !match;
-              if (match) visible++;
-            }
-            emptyMsg.hidden = visible > 0;
-            list.hidden = visible === 0;
-            updateCount();
-          };
-
-          search.addEventListener("input", applyFilter);
-          search.focus();
-
-          root.querySelector(".fcr-picker-all")?.addEventListener("click", () => {
-            for (const row of listRows()) {
-              if (!row.hidden) row.querySelector("input[type=checkbox]").checked = true;
-            }
-            updateCount();
-          });
-          root.querySelector(".fcr-picker-none")?.addEventListener("click", () => {
-            for (const row of listRows()) {
-              if (!row.hidden) row.querySelector("input[type=checkbox]").checked = false;
-            }
-            updateCount();
-          });
-          list.addEventListener("change", (e) => {
-            if (e.target?.matches?.('input[type="checkbox"]')) updateCount();
-          });
-
-          updateCount();
-        }
-      }, { classes: ["foundry-cpr-rollboards", "dialog"], width: 460 });
-      dlg.render(true);
+  async #promptNewBoard() {
+    const name = await Dialog.prompt({
+      title: L("boards.createTitle"),
+      content: `<div class="fcr-dialog-form">
+                  <label>${esc(L("boards.nameLabel"))}</label>
+                  <input type="text" name="name" autofocus />
+                </div>`,
+      label: L("boards.create"),
+      callback: (h) => {
+        const r = h instanceof jQuery ? h[0] : h;
+        return r.querySelector("input[name=name]")?.value?.trim();
+      },
+      rejectClose: false,
+      options: { classes: ["foundry-cpr-rollboards", "dialog"] }
     });
+    if (!name) return;
+    const board = makeBoard(name);
+    await upsertBoard(board);
+    this.#activeBoardId = board.id;
+    this.render(false);
   }
 
-  /* -------------------------------------------- */
-  /*  Preset: save                                */
-  /* -------------------------------------------- */
-
-  static async #onSavePreset(event, target) {
-    event.preventDefault();
-    return this.#savePresetDialog();
-  }
-
-  async #savePresetDialog() {
-    const scene = this.#currentScene();
-    if (!scene) {
-      ui.notifications.warn(L("noActiveTab"));
-      return;
-    }
-    const data = readData(scene);
-    if (!data.tiles.length) {
-      ui.notifications.warn(L("nothingToSave"));
-      return;
-    }
-
-    const defaultName = scene.name ?? "";
-    const content = `
-      <div class="fcr-dialog-form">
-        <label>${esc(L("presetName"))}</label>
-        <input type="text" name="presetName" value="${esc(defaultName)}" autofocus />
-      </div>`;
-
-    new Dialog({
-      title: L("savePresetTitle"),
-      content,
-      buttons: {
-        save: {
-          icon: '<i class="fas fa-save"></i>',
-          label: L("save"),
-          callback: async (html) => {
-            const root = html instanceof jQuery ? html[0] : html;
-            const name = root.querySelector("input[name=presetName]").value.trim();
-            if (!name) {
-              ui.notifications.warn(L("nameRequired"));
-              return;
-            }
-            const presets = readPresets();
-            const id = foundry.utils.randomID();
-            presets[id] = {
-              id,
-              name,
-              tiles: data.tiles.map((t) => ({ recipeId: t.recipeId, x: t.x, y: t.y })),
-              createdAt: Date.now()
-            };
-            await writePresets(presets);
-            ui.notifications.info(F("presetSaved", { name }));
-            this.render(false);
-          }
-        },
-        cancel: {
-          icon: '<i class="fas fa-times"></i>',
-          label: L("cancel")
-        }
-      },
-      default: "save"
-    }, { classes: ["foundry-cpr-rollboards", "dialog"] }).render(true);
-  }
-
-  /* -------------------------------------------- */
-  /*  Preset: import                              */
-  /* -------------------------------------------- */
-
-  static async #onImportPreset(event, target) {
-    event.preventDefault();
-    return this.#importPresetDialog();
-  }
-
-  async #importPresetDialog() {
-    const scene = this.#currentScene();
-    if (!scene) {
-      ui.notifications.warn(L("noActiveTab"));
-      return;
-    }
-    const presets = readPresets();
-    const list = Object.values(presets).sort((a, b) => a.name.localeCompare(b.name));
-    if (!list.length) {
-      ui.notifications.warn(L("noPresets"));
-      return;
-    }
-
-    const options = list.map((p) => `<option value="${esc(p.id)}">${esc(p.name)} (${p.tiles?.length ?? 0})</option>`).join("");
-    const content = `
-      <div class="fcr-dialog-form">
-        <label>${esc(L("choosePreset"))}</label>
-        <select name="presetId">${options}</select>
-        <p class="fcr-dialog-hint">${esc(L("importModeHint"))}</p>
-      </div>`;
-
-    const apply = async (mode, root) => {
-      const id = root.querySelector("select[name=presetId]").value;
-      const preset = presets[id];
-      if (!preset) return;
-      const dashData = readData(scene);
-      const presetTiles = (preset.tiles ?? []).map((t) => ({
-        recipeId: t.recipeId,
-        x: Number.isFinite(t.x) ? t.x : 0,
-        y: Number.isFinite(t.y) ? t.y : 0
-      }));
-      dashData.tiles = (mode === "replace") ? presetTiles : [...dashData.tiles, ...presetTiles];
-      await writeData(scene, dashData);
-      ui.notifications.info(F("presetImported", {
-        name: preset.name,
-        mode: L(mode === "replace" ? "replace" : "append")
-      }));
-      this.render(false);
-    };
-
-    new Dialog({
-      title: L("importPresetTitle"),
-      content,
-      buttons: {
-        append: {
-          icon: '<i class="fas fa-plus"></i>',
-          label: L("append"),
-          callback: (html) => apply("append", html instanceof jQuery ? html[0] : html)
-        },
-        replace: {
-          icon: '<i class="fas fa-sync-alt"></i>',
-          label: L("replace"),
-          callback: (html) => apply("replace", html instanceof jQuery ? html[0] : html)
-        },
-        cancel: {
-          icon: '<i class="fas fa-times"></i>',
-          label: L("cancel")
-        }
-      },
-      default: "append"
-    }, { classes: ["foundry-cpr-rollboards", "dialog"], width: 420 }).render(true);
-  }
-
-  /* -------------------------------------------- */
-  /*  Preset: manage                              */
-  /* -------------------------------------------- */
-
-  static async #onManagePresets(event, target) {
-    event.preventDefault();
-    return this.#managePresetsDialog();
-  }
-
-  async #managePresetsDialog() {
-    const presets = readPresets();
-    const list = Object.values(presets).sort((a, b) => a.name.localeCompare(b.name));
-    if (!list.length) {
-      ui.notifications.warn(L("noPresets"));
-      return;
-    }
-
-    const rows = list.map((p) => `
-      <div class="fcr-preset-row" data-preset-id="${esc(p.id)}">
-        <span class="fcr-preset-name">${esc(p.name)}</span>
-        <span class="fcr-preset-count">${p.tiles?.length ?? 0}</span>
-        <button type="button" class="fcr-preset-rename" title="${esc(L("rename"))}">
+  async #openBoardsManagerDialog() {
+    const list = listBoards();
+    const rows = list.map((b) => `
+      <div class="fcr-board-row" data-board-id="${esc(b.id)}">
+        <span class="fcr-board-name">${esc(b.name)}</span>
+        <span class="fcr-board-tilecount">${b.tiles?.length ?? 0}</span>
+        <button type="button" class="fcr-board-rename" title="${esc(L("rename"))}">
           <i class="fas fa-pen"></i>
         </button>
-        <button type="button" class="fcr-preset-delete" title="${esc(L("delete"))}">
+        <button type="button" class="fcr-board-delete" title="${esc(L("delete"))}">
           <i class="fas fa-trash"></i>
         </button>
       </div>
     `).join("");
 
-    const content = `<div class="fcr-preset-list">${rows}</div>`;
+    const content = list.length
+      ? `<div class="fcr-board-list">${rows}</div>`
+      : `<p class="fcr-dialog-hint">${esc(L("boards.noneYet"))}</p>`;
+
     const self = this;
 
     new Dialog({
-      title: L("managePresetsTitle"),
+      title: L("boards.manageTitle"),
       content,
       buttons: {
-        close: { icon: '<i class="fas fa-check"></i>', label: L("close") }
+        new: {
+          icon: '<i class="fas fa-plus"></i>',
+          label: L("boards.newBoard"),
+          callback: async () => {
+            await self.#promptNewBoard();
+            // Re-open the manager so the GM keeps managing if they want.
+            self.#openBoardsManagerDialog();
+          }
+        },
+        close: {
+          icon: '<i class="fas fa-check"></i>',
+          label: L("close")
+        }
       },
       default: "close",
       render: (html) => {
         const root = html instanceof jQuery ? html[0] : html;
-        root.querySelectorAll(".fcr-preset-row").forEach((row) => {
-          const id = row.dataset.presetId;
-          row.querySelector(".fcr-preset-rename").addEventListener("click", async () => {
-            const cur = readPresets();
-            const existing = cur[id];
-            if (!existing) return;
+        root.querySelectorAll(".fcr-board-row").forEach((row) => {
+          const id = row.dataset.boardId;
+          row.querySelector(".fcr-board-rename").addEventListener("click", async () => {
+            const cur = getBoard(id);
+            if (!cur) return;
             const name = await Dialog.prompt({
-              title: L("renamePreset"),
-              content: `<div class="fcr-dialog-form"><label>${esc(L("presetName"))}</label><input type="text" name="name" value="${esc(existing.name)}" autofocus /></div>`,
+              title: L("boards.renameTitle"),
+              content: `<div class="fcr-dialog-form">
+                          <label>${esc(L("boards.nameLabel"))}</label>
+                          <input type="text" name="name" value="${esc(cur.name)}" autofocus />
+                        </div>`,
               label: L("save"),
               callback: (h) => {
                 const r = h instanceof jQuery ? h[0] : h;
-                return r.querySelector("input[name=name]").value.trim();
+                return r.querySelector("input[name=name]")?.value?.trim();
               },
               rejectClose: false
             });
             if (!name) return;
-            cur[id].name = name;
-            await writePresets(cur);
-            row.querySelector(".fcr-preset-name").textContent = name;
+            cur.name = name;
+            await upsertBoard(cur);
+            row.querySelector(".fcr-board-name").textContent = name;
+            self.render(false);
           });
-          row.querySelector(".fcr-preset-delete").addEventListener("click", async () => {
-            const cur = readPresets();
-            const existing = cur[id];
-            if (!existing) return;
-            const confirmed = await Dialog.confirm({
-              title: L("deletePreset"),
-              content: `<p>${esc(F("deletePresetPrompt", { name: existing.name }))}</p>`,
+          row.querySelector(".fcr-board-delete").addEventListener("click", async () => {
+            const cur = getBoard(id);
+            if (!cur) return;
+            const ok = await Dialog.confirm({
+              title: L("boards.deleteTitle"),
+              content: `<p>${esc(F("boards.deletePrompt", { name: cur.name }))}</p>`,
               rejectClose: false
             });
-            if (!confirmed) return;
-            delete cur[id];
-            await writePresets(cur);
+            if (!ok) return;
+            await deleteBoard(id);
             row.remove();
+            if (self.#activeBoardId === id) self.#activeBoardId = null;
             self.render(false);
           });
         });
@@ -1555,8 +1296,8 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
   /*  Helpers                                     */
   /* -------------------------------------------- */
 
-  #currentScene() {
-    return this.#activeSceneId ? game.scenes.get(this.#activeSceneId) : null;
+  #currentBoard() {
+    return this.#activeBoardId ? getBoard(this.#activeBoardId) : null;
   }
 
   #clampToCanvas(canvas, clientX, clientY, centerTile = false) {
