@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.2 — Item Piles integration: spawn a merchant from a rolled card
+
+When the [Item Piles](https://foundryvtt.com/packages/item-piles) module is active, drawer cards gain a **shop-icon button** alongside re-roll / send-to-chat / dismiss. Clicking it walks the card's result tree, resolves each entry to a `cyberpunk-red-core` compendium Item, and spawns an Item Piles merchant Actor on the active scene with those items as purchasable inventory. The merchant interface opens automatically.
+
+- New `scripts/item-piles.mjs`. Public functions: `isItemPilesActive()`, `resolveItemFromText(text)`, `resolveCardItems(card)`, `spawnMerchantFromCard(card)`.
+- **Item resolution** searches a list of CPR compendia by name (`core_weapons`, `core_weapons-branded`, `core_armor`, `core_cyberware`, `core_gear`, `core_clothing`, `core_drugs`, `core_ammo`, `core_programs`). Exact match first, then a startsWith fallback so `Heavy Pistol` finds `Heavy Pistol (Excellent)`.
+- **Placeholder filtering**: corebook entries like `Programs or Hardware of 100eb or less`, `Cybereye Option of exactly 1,000eb`, `A Single Exotic Weapon of GM's choice`, generic `External Cyberware of 500eb or less` etc. are detected and skipped — they describe categories, not specific items. The skipped list is logged to the console so the GM can add them by hand.
+- **Alternates**: `Heavy Pistol or Very Heavy Pistol` is split on " or " and the first hit wins.
+- **Merchant config**: `purchaseOnly: true`, `infiniteCurrencies: true`, `infiniteQuantity: false` (single-stock per item). Merchant placed at the canvas's current view centre. Image inherits the recipe's icon.
+- Button only renders when `game.modules.get("item-piles")?.active && game.itempiles?.API` — invisible when the module isn't installed.
+
 ## 0.3.1 — Recipe library is browsable; sample import auto-places the Night Market tile
 
 The 0.3.0 sample import created the Night Market generator recipe but it was invisible — recipes live in a world setting that had no UI to browse, so the GM never saw the master tile.

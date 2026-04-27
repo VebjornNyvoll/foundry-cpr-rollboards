@@ -125,6 +125,15 @@
     "recipes.alreadyOnBoard": "\"{name}\" is already on board \"{board}\".",
     "recipes.noActiveBoardForPlace": "No active board to place \"{name}\" on. Create or pick one with the + tab button first.",
 
+    "itemPiles.spawnButtonTooltip": "Spawn an Item Piles merchant on the active scene with the rolled items as inventory. Items not found in the cyberpunk-red-core compendiums are skipped.",
+    "itemPiles.notInstalled": "The Item Piles module is not active. Enable it to spawn merchants from rolled results.",
+    "itemPiles.noScene": "No active scene to place the merchant on.",
+    "itemPiles.noItemsResolved": "None of the rolled results matched a Cyberpunk Red compendium item — nothing to put in the merchant. Check the console for the unresolved entries.",
+    "itemPiles.createFailed": "Item Piles refused to create the merchant — see console.",
+    "itemPiles.merchantName": "Night Market — {recipe} ({time})",
+    "itemPiles.spawnedMerchant": "Merchant \"{name}\" spawned with {count} items.",
+    "itemPiles.spawnedMerchantSkipped": "Merchant \"{name}\" spawned with {count} items. {skipped} corebook entries (placeholders / categories / GM's-choice) were not added — see console for the list.",
+
     "step.label": "Step label",
     "step.sourceLabel": "Source",
     "step.dragToMove": "Drag to move",

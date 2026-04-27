@@ -53,6 +53,7 @@ import {
 import { rollRecipe } from "./engine.mjs";
 import { isCprActive, openMookDialog } from "./cpr-mook.mjs";
 import { importSampleTables } from "./sample-tables.mjs";
+import { isItemPilesActive, spawnMerchantFromCard } from "./item-piles.mjs";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -1196,6 +1197,10 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
   #renderCardHTML(card) {
     const time = new Date(card.timestamp).toLocaleTimeString();
     const body = card.nodes.map((n) => this.#renderNodeHTML(n)).join("");
+    const merchantBtn = isItemPilesActive()
+      ? `<button type="button" class="fcr-card-action" data-card-action="spawnMerchant"
+                title="${esc(L("itemPiles.spawnButtonTooltip"))}"><i class="fas fa-store"></i></button>`
+      : "";
     return `
       <div class="fcr-card" data-card-id="${esc(card.id)}">
         <div class="fcr-card-header">
@@ -1203,6 +1208,7 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
           <span class="fcr-card-time">${esc(time)}</span>
           <button type="button" class="fcr-card-action" data-card-action="reroll"
                   title="${esc(L("card.reroll"))}"><i class="fas fa-rotate-right"></i></button>
+          ${merchantBtn}
           <button type="button" class="fcr-card-action" data-card-action="toChat"
                   title="${esc(L("card.toChat"))}"><i class="fas fa-comment"></i></button>
           <button type="button" class="fcr-card-action" data-card-action="dismiss"
@@ -1293,6 +1299,8 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
           }
         } else if (action === "toChat") {
           await this.#sendCardToChat(card);
+        } else if (action === "spawnMerchant") {
+          await spawnMerchantFromCard(card);
         }
         return;
       }
