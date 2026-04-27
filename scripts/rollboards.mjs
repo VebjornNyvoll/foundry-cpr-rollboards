@@ -51,6 +51,7 @@ import {
 
 import { rollRecipe } from "./engine.mjs";
 import { isCprActive, openMookDialog } from "./cpr-mook.mjs";
+import { importSampleTables } from "./sample-tables.mjs";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -210,7 +211,7 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
     }
 
     if (this.#drawerOpen) this.#renderCards();
-    if (this.#editingRecipeId) this.#renderInspector();
+    if (this.#editingRecipeId) this.#renderEditor();
   }
 
   _onClose(options) {
@@ -726,13 +727,13 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
   }
 
   /* -------------------------------------------- */
-  /*  Inspector                                   */
+  /*  Editor (full-width recipe view)             */
   /* -------------------------------------------- */
 
-  async #renderInspector() {
+  async #renderEditor() {
     const root = this.element;
     if (!root) return;
-    const tree = root.querySelector(".fcr-inspector-tree");
+    const tree = root.querySelector(".fcr-editor-tree");
     if (!tree) return;
     const recipe = getRecipe(this.#editingRecipeId);
     if (!recipe) {
@@ -740,15 +741,20 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
       return;
     }
 
-    // Pre-resolve table names for every step so the render is sync.
     this.#tableNameCache.clear();
     await this.#resolveTableNames(recipe.steps ?? []);
 
-    const stepsHTML = (recipe.steps ?? []).map((s) => this.#renderStepHTML(s, 0)).join("");
-    tree.innerHTML = stepsHTML
-      ? stepsHTML
-      : `<div class="fcr-inspector-empty">${esc(L("inspectorEmpty"))}</div>`;
-    this.#bindInspector(tree, recipe);
+    const stepsHTML = (recipe.steps ?? []).map((s) => this.#renderStepCardHTML(s)).join("");
+    const empty = !stepsHTML
+      ? `<div class="fcr-editor-empty">${esc(L("editor.empty"))}</div>`
+      : "";
+    const dropZone = `
+      <div class="fcr-editor-droplane" data-action-scope="droplane">
+        <i class="fas fa-plus"></i>
+        ${esc(L("editor.dropToAddRoot"))}
+      </div>`;
+    tree.innerHTML = empty + stepsHTML + dropZone;
+    this.#bindEditor(tree, recipe);
   }
 
   async #resolveTableNames(steps) {
@@ -765,63 +771,95 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
     }
   }
 
-  #renderStepHTML(step, depth) {
+  #renderStepCardHTML(step) {
     const tableName = this.#tableNameCache.get(step.tableUuid) || "";
     const labelValue = step.label || tableName || "";
-    const sourceTooltip = tableName
-      ? `${L("step.sourceLabel")}: ${tableName}`
-      : (step.tableUuid ? `${L("step.sourceLabel")}: ${L("step.missingTable")}` : "");
+    const sourceText = tableName
+      ? `${L("editor.sourceLabel")}: ${tableName}`
+      : (step.tableUuid
+        ? `${L("editor.sourceLabel")}: ${L("editor.sourceMissing")}`
+        : L("editor.sourceNone"));
+    const sourceClass = step.tableUuid ? "" : " fcr-step-card-source-missing";
     const optionalOn = !!step.optional;
     const promptOn = step.countMode === "prompt";
-    const isDefaultCount = (step.count ?? 1) === 1;
-    const isDefaultChance = (step.chance ?? 100) === 100;
-    const childrenHTML = (step.children ?? []).map((c) => this.#renderStepHTML(c, depth + 1)).join("");
+    const childrenHTML = (step.children ?? []).map((c) => this.#renderStepCardHTML(c)).join("");
 
     return `
-      <div class="fcr-step" data-step-id="${esc(step.id)}" data-depth="${depth}">
-        <div class="fcr-step-row" draggable="true">
-          <span class="fcr-step-handle" title="${esc(L("step.dragToMove"))}">⋮⋮</span>
-          <input type="text" class="fcr-step-label${step.tableUuid ? "" : " fcr-step-missing"}"
+      <div class="fcr-step-card" data-step-id="${esc(step.id)}">
+        <div class="fcr-step-card-head" draggable="true">
+          <span class="fcr-step-card-handle" title="${esc(L("editor.dragHandle"))}">⋮⋮</span>
+          <input type="text" class="fcr-step-card-label"
                  value="${esc(labelValue)}"
-                 placeholder="${esc(L("step.label"))}"
-                 title="${esc(sourceTooltip)}"
+                 placeholder="${esc(L("editor.labelPlaceholder"))}"
                  data-step-field="label" />
-          <button type="button" class="fcr-step-delete" data-step-action="delete"
-                  title="${esc(L("step.delete"))}"><i class="fas fa-times"></i></button>
+          <button type="button" class="fcr-step-card-delete" data-step-action="delete"
+                  title="${esc(L("editor.deleteStep"))}">
+            <i class="fas fa-times"></i>
+          </button>
         </div>
-        <div class="fcr-step-controls">
-          <label class="fcr-step-control" title="${esc(L("step.count"))}">
-            <span class="fcr-step-control-icon">×</span>
-            <input type="number" class="fcr-step-count${isDefaultCount ? " fcr-step-default" : ""}"
-                   min="1" value="${esc(String(step.count ?? 1))}"
+        <div class="fcr-step-card-source${sourceClass}">
+          <i class="fas fa-link"></i>
+          <span>${esc(sourceText)}</span>
+        </div>
+        <div class="fcr-step-card-controls">
+          <div class="fcr-step-card-field">
+            <label>${esc(L("editor.rollCount"))}</label>
+            <input type="number" class="fcr-step-card-input fcr-step-card-count" min="1"
+                   value="${esc(String(step.count ?? 1))}"
                    data-step-field="count" />
-          </label>
-          <label class="fcr-step-control" title="${esc(L("step.chanceTooltip"))}">
-            <input type="number" class="fcr-step-chance${isDefaultChance ? " fcr-step-default" : ""}"
-                   min="1" max="100" value="${esc(String(step.chance ?? 100))}"
+            <span class="fcr-step-card-suffix">${esc(L("editor.times"))}</span>
+          </div>
+          <div class="fcr-step-card-field">
+            <label>${esc(L("editor.chanceLabel"))}</label>
+            <input type="number" class="fcr-step-card-input fcr-step-card-chance" min="1" max="100"
+                   value="${esc(String(step.chance ?? 100))}"
                    data-step-field="chance" />
-            <span class="fcr-step-control-icon">%</span>
+            <span class="fcr-step-card-suffix">%</span>
+          </div>
+          <label class="fcr-step-card-toggle">
+            <input type="checkbox" ${promptOn ? "checked" : ""}
+                   data-step-toggle="prompt" />
+            <span>${esc(L("editor.promptForCount"))}</span>
           </label>
-          <button type="button"
-                  class="fcr-step-flag${promptOn ? " fcr-step-flag-on" : ""}"
-                  data-step-toggle="prompt"
-                  title="${esc(L("step.countPrompt"))}">${esc(L("step.promptShort"))}</button>
-          <button type="button"
-                  class="fcr-step-flag${optionalOn ? " fcr-step-flag-on" : ""}"
-                  data-step-toggle="optional"
-                  title="${esc(L("step.optionalTooltip"))}">${esc(L("step.optionalShort"))}</button>
+          <label class="fcr-step-card-toggle">
+            <input type="checkbox" ${optionalOn ? "checked" : ""}
+                   data-step-toggle="optional" />
+            <span>${esc(L("editor.optional"))}</span>
+          </label>
         </div>
         ${childrenHTML
-          ? `<div class="fcr-step-children">${childrenHTML}</div>`
+          ? `<div class="fcr-step-card-children">
+               <div class="fcr-step-card-children-label">${esc(L("editor.childrenLabel"))}</div>
+               ${childrenHTML}
+             </div>`
           : ""}
       </div>`;
   }
 
-  #bindInspector(tree, recipe) {
+  #bindEditor(tree, recipe) {
+    // Inline edits — count/chance/label change handlers.
     tree.addEventListener("change", async (event) => {
+      // Toggle checkboxes (prompt / optional).
+      const toggle = event.target?.dataset?.stepToggle;
+      if (toggle) {
+        const stepEl = event.target.closest(".fcr-step-card");
+        const stepId = stepEl?.dataset?.stepId;
+        if (!stepId) return;
+        const cur = getRecipe(recipe.id);
+        const step = cur ? findStep(cur, stepId) : null;
+        if (!step) return;
+        if (toggle === "prompt") {
+          step.countMode = event.target.checked ? "prompt" : "fixed";
+        } else if (toggle === "optional") {
+          step.optional = !!event.target.checked;
+        }
+        await upsertRecipe(cur);
+        return;
+      }
+
       const field = event.target?.dataset?.stepField;
       if (!field) return;
-      const stepEl = event.target.closest(".fcr-step");
+      const stepEl = event.target.closest(".fcr-step-card");
       const stepId = stepEl?.dataset?.stepId;
       if (!stepId) return;
       const cur = getRecipe(recipe.id);
@@ -839,77 +877,65 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
       await upsertRecipe(cur);
     });
 
+    // Step delete (the card's × button).
     tree.addEventListener("click", async (event) => {
-      const toggleBtn = event.target.closest("[data-step-toggle]");
-      if (toggleBtn) {
-        event.preventDefault();
-        const stepEl = toggleBtn.closest(".fcr-step");
-        const stepId = stepEl?.dataset?.stepId;
-        if (!stepId) return;
-        const cur = getRecipe(recipe.id);
-        const step = cur ? findStep(cur, stepId) : null;
-        if (!step) return;
-        const which = toggleBtn.dataset.stepToggle;
-        if (which === "prompt") {
-          step.countMode = step.countMode === "prompt" ? "fixed" : "prompt";
-        } else if (which === "optional") {
-          step.optional = !step.optional;
-        }
-        await upsertRecipe(cur);
-        this.#renderInspector();
-        return;
-      }
       const actionBtn = event.target.closest("[data-step-action]");
-      if (actionBtn) {
-        event.preventDefault();
-        const stepEl = actionBtn.closest(".fcr-step");
-        const stepId = stepEl?.dataset?.stepId;
-        if (!stepId) return;
-        const cur = getRecipe(recipe.id);
-        const step = cur ? findStep(cur, stepId) : null;
-        if (!step) return;
-        if (actionBtn.dataset.stepAction === "delete") {
-          const hasChildren = (step.children?.length ?? 0) > 0;
-          if (hasChildren) {
-            const ok = await Dialog.confirm({
-              title: L("step.delete"),
-              content: `<p>${esc(F("step.deleteConfirm", { name: step.label || L("step.missingTable") }))}</p>`,
-              rejectClose: false
-            });
-            if (!ok) return;
-          }
-          removeStep(cur, stepId);
-          await upsertRecipe(cur);
-          this.render(false);
+      if (!actionBtn) return;
+      event.preventDefault();
+      const stepEl = actionBtn.closest(".fcr-step-card");
+      const stepId = stepEl?.dataset?.stepId;
+      if (!stepId) return;
+      const cur = getRecipe(recipe.id);
+      const step = cur ? findStep(cur, stepId) : null;
+      if (!step) return;
+      if (actionBtn.dataset.stepAction === "delete") {
+        const hasChildren = (step.children?.length ?? 0) > 0;
+        if (hasChildren) {
+          const ok = await Dialog.confirm({
+            title: L("editor.deleteStep"),
+            content: `<p>${esc(F("editor.deleteConfirm", { name: step.label || L("editor.sourceMissing") }))}</p>`,
+            rejectClose: false
+          });
+          if (!ok) return;
         }
+        removeStep(cur, stepId);
+        await upsertRecipe(cur);
+        this.render(false);
       }
     });
 
-    // Drop handlers — child step on row, internal reorder.
+    // Drop handlers — child step on a card, root step on the drop lane,
+    // internal reorder (drag the card head).
     tree.addEventListener("dragover", (event) => {
       event.preventDefault();
       event.dataTransfer.dropEffect = "copy";
-      const target = event.target.closest(".fcr-step-row");
-      const previous = tree.querySelector(".fcr-step-row.fcr-step-drop-target");
-      if (previous && previous !== target) previous.classList.remove("fcr-step-drop-target");
-      if (target) target.classList.add("fcr-step-drop-target");
+      // Highlight the most-specific drop target (a card OR the drop lane).
+      const card = event.target.closest(".fcr-step-card");
+      const lane = event.target.closest(".fcr-editor-droplane");
+      tree.querySelectorAll(".fcr-step-card-drop-target, .fcr-editor-droplane-active")
+        .forEach((el) => el.classList.remove("fcr-step-card-drop-target", "fcr-editor-droplane-active"));
+      if (card) card.classList.add("fcr-step-card-drop-target");
+      else if (lane) lane.classList.add("fcr-editor-droplane-active");
     });
 
     tree.addEventListener("dragleave", (event) => {
       if (!event.relatedTarget || !tree.contains(event.relatedTarget)) {
-        tree.querySelectorAll(".fcr-step-row.fcr-step-drop-target")
-          .forEach((el) => el.classList.remove("fcr-step-drop-target"));
+        tree.querySelectorAll(".fcr-step-card-drop-target, .fcr-editor-droplane-active")
+          .forEach((el) => el.classList.remove("fcr-step-card-drop-target", "fcr-editor-droplane-active"));
       }
     });
 
     tree.addEventListener("drop", async (event) => {
-      tree.querySelectorAll(".fcr-step-row.fcr-step-drop-target")
-        .forEach((el) => el.classList.remove("fcr-step-drop-target"));
-      const targetRow = event.target.closest(".fcr-step-row");
-      if (!targetRow) return;
-      const targetStepId = targetRow.closest(".fcr-step")?.dataset?.stepId;
-      if (!targetStepId) return;
+      tree.querySelectorAll(".fcr-step-card-drop-target, .fcr-editor-droplane-active")
+        .forEach((el) => el.classList.remove("fcr-step-card-drop-target", "fcr-editor-droplane-active"));
 
+      const targetCard = event.target.closest(".fcr-step-card");
+      const targetLane = event.target.closest(".fcr-editor-droplane");
+      if (!targetCard && !targetLane) return;
+
+      const targetStepId = targetCard?.dataset?.stepId ?? null;
+
+      // Internal reorder (a step card head was dragged onto a target).
       const internalId = event.dataTransfer.getData("application/x-fcr-step");
       if (internalId) {
         event.preventDefault();
@@ -919,11 +945,12 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
         const ok = moveStep(cur, internalId, targetStepId, undefined);
         if (ok) {
           await upsertRecipe(cur);
-          this.#renderInspector();
+          this.render(false);
         }
         return;
       }
 
+      // External drop — a RollTable from the sidebar.
       let payload;
       try {
         payload = JSON.parse(event.dataTransfer.getData("text/plain"));
@@ -946,22 +973,23 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
       this.render(false);
     });
 
-    tree.querySelectorAll(".fcr-step-row[draggable=true]").forEach((row) => {
-      row.addEventListener("dragstart", (event) => {
-        const id = row.closest(".fcr-step")?.dataset?.stepId;
+    // Internal drag of a step (its head bar) for reorder.
+    tree.querySelectorAll(".fcr-step-card-head[draggable=true]").forEach((head) => {
+      head.addEventListener("dragstart", (event) => {
+        const id = head.closest(".fcr-step-card")?.dataset?.stepId;
         if (!id) return;
         event.dataTransfer.setData("application/x-fcr-step", id);
         event.dataTransfer.effectAllowed = "move";
-        row.closest(".fcr-step")?.classList.add("fcr-step-dragging");
+        head.closest(".fcr-step-card")?.classList.add("fcr-step-card-dragging");
       });
-      row.addEventListener("dragend", () => {
-        row.closest(".fcr-step")?.classList.remove("fcr-step-dragging");
+      head.addEventListener("dragend", () => {
+        head.closest(".fcr-step-card")?.classList.remove("fcr-step-card-dragging");
       });
     });
 
     // Recipe-name input change handler — bind once per render.
     const rootEl = this.element;
-    const nameInput = rootEl?.querySelector(".fcr-inspector-name");
+    const nameInput = rootEl?.querySelector(".fcr-editor-name");
     if (nameInput && !nameInput.dataset.fcrBound) {
       nameInput.dataset.fcrBound = "1";
       nameInput.addEventListener("change", async () => {
@@ -1239,6 +1267,13 @@ export class RollboardDashboard extends HandlebarsApplicationMixin(ApplicationV2
             await self.#promptNewBoard();
             // Re-open the manager so the GM keeps managing if they want.
             self.#openBoardsManagerDialog();
+          }
+        },
+        samples: {
+          icon: '<i class="fas fa-magic"></i>',
+          label: L("samples.importButton"),
+          callback: async () => {
+            await importSampleTables();
           }
         },
         close: {

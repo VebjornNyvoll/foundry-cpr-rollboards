@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.2.3 — Full-width recipe editor; sample roll tables import
+
+The 0.2.0 cramped 360px side-panel inspector is replaced by a **full-width editor view** that takes over the canvas area while editing. Step cards are substantial blocks with proper form layout instead of a single row of icons crammed shoulder-to-shoulder.
+
+- **Step cards** — each step is its own bordered card with three sections:
+  1. Head row: drag handle · table-name input (full-width, editable) · delete ×
+  2. Source row: shows the actual `RollTable` source as link-text (resolved from uuid)
+  3. Controls row: clearly labelled `Roll [N] time(s)`, `Chance [N]%`, `☐ Prompt for count`, `☐ Optional` — with proper labels above each input, not just naked icons.
+- **Children indented** with a left accent bar inside the parent card. Recipe trees are visually obvious.
+- **Drop lane** at the bottom of the editor: drop a roll table there to add a sibling root step. Drop directly on a step card to nest as a child of that step.
+- **Reorder** by dragging the step card's head bar (the gray strip at the top) onto another card.
+- **Editor toolbar mode** — the top toolbar swaps in editor mode: a "Back to board" button replaces Roll-all/Boards, and the recipe name input lives there at substantial width. No more the 360px-input squeeze.
+- **CSS specificity hardened** so Foundry v13's input/checkbox/button defaults can't squash the layout.
+
+### Sample roll tables import
+
+- New "Import sample tables" button in the **Boards…** dialog. One click creates 5 CPR-themed roll tables in the world's roll-table directory:
+  - CPR — NPC Archetype
+  - CPR — NPC Quirk
+  - CPR — Random Job / Hustle
+  - CPR — Gang Type
+  - CPR — Encounter Hook
+- Idempotent on the per-name level: re-running skips tables that already exist.
+- Source: [`scripts/sample-tables.mjs`](scripts/sample-tables.mjs). Edit there if you want to add more.
+
 ## 0.2.2 — Restore scene-controls opener; v13-compatible sidebar hook
 
 The 0.2.0 refactor removed the d20 button from the Scene Controls layer, leaving only the Roll Tables sidebar header button as an opener. In Foundry v13 the sidebar was rewritten as ApplicationV2 components and the old `renderRollTableDirectory` hook may not fire — so a v13 GM ended up with the module loaded but no UI affordance to open it.

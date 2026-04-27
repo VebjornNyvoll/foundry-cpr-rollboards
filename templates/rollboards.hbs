@@ -1,4 +1,4 @@
-{{!-- CPR Rollboards — GM-only. Tabs per user-named board; canvas of recipe tiles; inspector side panel; results drawer. --}}
+{{!-- CPR Rollboards — GM-only. Tabs + toolbar + (canvas | recipe editor) + drawer. --}}
 <div class="fcr-root">
   <nav class="fcr-tabs" aria-label="{{localize 'FOUNDRY-CPR-ROLLBOARDS.boards.label'}}">
     {{#if hasBoards}}
@@ -23,105 +23,110 @@
   </nav>
 
   <div class="fcr-toolbar">
-    <label class="fcr-show-names">
-      <input type="checkbox"
-             data-action="toggleNames"
-             {{#if showNames}}checked{{/if}}
-             {{#unless activeBoardId}}disabled{{/unless}} />
-      {{localize "FOUNDRY-CPR-ROLLBOARDS.showNames"}}
-    </label>
+    {{#unless inspectorOpen}}
+      <label class="fcr-show-names">
+        <input type="checkbox"
+               data-action="toggleNames"
+               {{#if showNames}}checked{{/if}}
+               {{#unless activeBoardId}}disabled{{/unless}} />
+        {{localize "FOUNDRY-CPR-ROLLBOARDS.showNames"}}
+      </label>
 
-    <span class="fcr-toolbar-sep"></span>
+      <span class="fcr-toolbar-sep"></span>
 
-    <button type="button" class="fcr-btn fcr-btn-primary" data-action="rollAll"
-            {{#unless canRollAll}}disabled{{/unless}}
-            title="{{localize 'FOUNDRY-CPR-ROLLBOARDS.rollAllTooltip'}}">
-      <i class="fas fa-dice"></i>
-      {{localize "FOUNDRY-CPR-ROLLBOARDS.rollAllButton"}}
-    </button>
+      <button type="button" class="fcr-btn fcr-btn-primary" data-action="rollAll"
+              {{#unless canRollAll}}disabled{{/unless}}
+              title="{{localize 'FOUNDRY-CPR-ROLLBOARDS.rollAllTooltip'}}">
+        <i class="fas fa-dice"></i>
+        {{localize "FOUNDRY-CPR-ROLLBOARDS.rollAllButton"}}
+      </button>
 
-    <span class="fcr-toolbar-sep"></span>
+      <span class="fcr-toolbar-sep"></span>
 
-    <button type="button" class="fcr-btn" data-action="openBoardsManager"
-            title="{{localize 'FOUNDRY-CPR-ROLLBOARDS.boards.manageTooltip'}}">
-      <i class="fas fa-folder-tree"></i>
-      {{localize "FOUNDRY-CPR-ROLLBOARDS.boards.manageButton"}}
-    </button>
+      <button type="button" class="fcr-btn" data-action="openBoardsManager"
+              title="{{localize 'FOUNDRY-CPR-ROLLBOARDS.boards.manageTooltip'}}">
+        <i class="fas fa-folder-tree"></i>
+        {{localize "FOUNDRY-CPR-ROLLBOARDS.boards.manageButton"}}
+      </button>
 
-    <span class="fcr-hint">{{localize "FOUNDRY-CPR-ROLLBOARDS.hint"}}</span>
+      <span class="fcr-hint">{{localize "FOUNDRY-CPR-ROLLBOARDS.hint"}}</span>
+    {{else}}
+      <button type="button" class="fcr-btn" data-action="closeInspector">
+        <i class="fas fa-arrow-left"></i>
+        {{localize "FOUNDRY-CPR-ROLLBOARDS.editor.back"}}
+      </button>
+      <span class="fcr-toolbar-sep"></span>
+      <span class="fcr-editor-toolbar-label">{{localize "FOUNDRY-CPR-ROLLBOARDS.editor.editingLabel"}}</span>
+      <input type="text" class="fcr-editor-name"
+             value="{{editingRecipeName}}"
+             placeholder="{{localize 'FOUNDRY-CPR-ROLLBOARDS.recipeName'}}"
+             aria-label="{{localize 'FOUNDRY-CPR-ROLLBOARDS.recipeName'}}" />
+      <span class="fcr-hint">{{localize "FOUNDRY-CPR-ROLLBOARDS.editor.autosaveHint"}}</span>
+    {{/unless}}
   </div>
 
   <div class="fcr-main">
-    <div class="fcr-canvas-scroll">
-      <div class="fcr-canvas" data-board-id="{{activeBoardId}}">
-        {{#each tiles}}
-          <div class="fcr-tile{{#if ../showNames}} fcr-with-name{{/if}}{{#if missing}} fcr-missing{{/if}}{{#if editing}} fcr-tile-editing{{/if}}"
-               data-recipe-id="{{recipeId}}"
-               style="left: {{x}}px; top: {{y}}px;">
-            {{#if ../showNames}}
-              <div class="fcr-tile-name" title="{{name}}">{{name}}</div>
-            {{/if}}
-            <button type="button"
-                    class="fcr-tile-icon"
-                    data-action="rollTile"
-                    data-recipe-id="{{recipeId}}"
-                    title="{{name}}"
-                    aria-label="{{name}}"
-                    style="background-image: url('{{img}}');">
-            </button>
-            <button type="button"
-                    class="fcr-tile-edit"
-                    data-action="editTile"
-                    data-recipe-id="{{recipeId}}"
-                    title="{{localize 'FOUNDRY-CPR-ROLLBOARDS.editRecipe'}}"
-                    aria-label="{{localize 'FOUNDRY-CPR-ROLLBOARDS.editRecipe'}}">
-              <i class="fas fa-pen"></i>
-            </button>
-            <button type="button"
-                    class="fcr-tile-delete"
-                    data-action="deleteTile"
-                    data-recipe-id="{{recipeId}}"
-                    title="{{localize 'FOUNDRY-CPR-ROLLBOARDS.remove'}}"
-                    aria-label="{{localize 'FOUNDRY-CPR-ROLLBOARDS.remove'}}">
-              <i class="fas fa-times"></i>
-            </button>
-            {{#if stepCount}}
-              <span class="fcr-tile-badge" title="{{stepCountTooltip}}">{{stepCount}}</span>
-            {{/if}}
-          </div>
-        {{/each}}
-
-        {{#unless tiles.length}}
-          <div class="fcr-canvas-empty">
-            {{#if activeBoardId}}
-              {{localize "FOUNDRY-CPR-ROLLBOARDS.dropHere"}}
-            {{else}}
-              {{#if hasBoards}}
-                {{localize "FOUNDRY-CPR-ROLLBOARDS.boards.pickOne"}}
-              {{else}}
-                {{localize "FOUNDRY-CPR-ROLLBOARDS.boards.createFirst"}}
-              {{/if}}
-            {{/if}}
-          </div>
-        {{/unless}}
-      </div>
-    </div>
-
     {{#if inspectorOpen}}
-      <aside class="fcr-inspector" data-recipe-id="{{editingRecipeId}}">
-        <div class="fcr-inspector-header">
-          <input type="text" class="fcr-inspector-name"
-                 value="{{editingRecipeName}}"
-                 placeholder="{{localize 'FOUNDRY-CPR-ROLLBOARDS.recipeName'}}"
-                 aria-label="{{localize 'FOUNDRY-CPR-ROLLBOARDS.recipeName'}}" />
-          <button type="button" class="fcr-inspector-close" data-action="closeInspector"
-                  title="{{localize 'FOUNDRY-CPR-ROLLBOARDS.close'}}">
-            <i class="fas fa-times"></i>
-          </button>
+      <section class="fcr-editor" data-recipe-id="{{editingRecipeId}}">
+        <div class="fcr-editor-tree" data-action-scope="editor">
+          {{!-- step cards rendered dynamically by #renderEditor --}}
         </div>
-        <p class="fcr-inspector-hint">{{localize "FOUNDRY-CPR-ROLLBOARDS.inspectorHint"}}</p>
-        <div class="fcr-inspector-tree" data-action-scope="inspector"></div>
-      </aside>
+      </section>
+    {{else}}
+      <div class="fcr-canvas-scroll">
+        <div class="fcr-canvas" data-board-id="{{activeBoardId}}">
+          {{#each tiles}}
+            <div class="fcr-tile{{#if ../showNames}} fcr-with-name{{/if}}{{#if missing}} fcr-missing{{/if}}{{#if editing}} fcr-tile-editing{{/if}}"
+                 data-recipe-id="{{recipeId}}"
+                 style="left: {{x}}px; top: {{y}}px;">
+              {{#if ../showNames}}
+                <div class="fcr-tile-name" title="{{name}}">{{name}}</div>
+              {{/if}}
+              <button type="button"
+                      class="fcr-tile-icon"
+                      data-action="rollTile"
+                      data-recipe-id="{{recipeId}}"
+                      title="{{name}}"
+                      aria-label="{{name}}"
+                      style="background-image: url('{{img}}');">
+              </button>
+              <button type="button"
+                      class="fcr-tile-edit"
+                      data-action="editTile"
+                      data-recipe-id="{{recipeId}}"
+                      title="{{localize 'FOUNDRY-CPR-ROLLBOARDS.editRecipe'}}"
+                      aria-label="{{localize 'FOUNDRY-CPR-ROLLBOARDS.editRecipe'}}">
+                <i class="fas fa-pen"></i>
+              </button>
+              <button type="button"
+                      class="fcr-tile-delete"
+                      data-action="deleteTile"
+                      data-recipe-id="{{recipeId}}"
+                      title="{{localize 'FOUNDRY-CPR-ROLLBOARDS.remove'}}"
+                      aria-label="{{localize 'FOUNDRY-CPR-ROLLBOARDS.remove'}}">
+                <i class="fas fa-times"></i>
+              </button>
+              {{#if stepCount}}
+                <span class="fcr-tile-badge" title="{{stepCountTooltip}}">{{stepCount}}</span>
+              {{/if}}
+            </div>
+          {{/each}}
+
+          {{#unless tiles.length}}
+            <div class="fcr-canvas-empty">
+              {{#if activeBoardId}}
+                {{localize "FOUNDRY-CPR-ROLLBOARDS.dropHere"}}
+              {{else}}
+                {{#if hasBoards}}
+                  {{localize "FOUNDRY-CPR-ROLLBOARDS.boards.pickOne"}}
+                {{else}}
+                  {{localize "FOUNDRY-CPR-ROLLBOARDS.boards.createFirst"}}
+                {{/if}}
+              {{/if}}
+            </div>
+          {{/unless}}
+        </div>
+      </div>
     {{/if}}
   </div>
 
